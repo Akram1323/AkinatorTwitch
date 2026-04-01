@@ -1,0 +1,27 @@
+# Dépendances
+node_modules/
+
+# Variables d'environnement (SENSIBLES - ne jamais committer)
+backend/.env
+.env
+
+# Base de données SQLite
+backend/data/*.db
+backend/data/*.db-shm
+backend/data/*.db-wal
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Build
+dist/
+build/

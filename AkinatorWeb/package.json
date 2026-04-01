@@ -1,0 +1,12 @@
+{
+  "name": "akinatorweb",
+  "version": "2.0.0",
+  "description": "Akinator Twitch - Recommandation de jeux vidéo",
+  "scripts": {
+    "start": "cd backend && node server.js",
+    "build": "cd backend && npm install"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

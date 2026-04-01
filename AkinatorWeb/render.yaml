@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: akinatorweb
+    runtime: node
+    region: frankfurt
+    plan: free
+    buildCommand: cd backend && npm install
+    startCommand: cd backend && node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_USERNAME
+        value: Akinator
+      - key: ADMIN_PASSWORD
+        sync: false        # À renseigner manuellement dans Render (votre mot de passe admin)
+      - key: DATABASE_PATH
+        value: ./data/akinator.db
+      - key: APP_URL
+        value: https://akinatorweb.onrender.com  # Modifier avec votre URL Render
+      # Variables optionnelles - décommenter si vous avez les credentials
+      # - key: TWITCH_CLIENT_ID
+      #   sync: false
+      # - key: TWITCH_CLIENT_SECRET
+      #   sync: false
+      # BTCPay réel - décommenter pour activer
+      # - key: BTCPAY_SERVER_URL
+      #   sync: false
+      # - key: BTCPAY_API_KEY
+      #   sync: false
+      # - key: BTCPAY_STORE_ID
+      #   sync: false
+      # - key: BTCPAY_WEBHOOK_SECRET
+      #   sync: false

@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Akinator Twitch - Recommandation de Jeux</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="css/style.css">
+    
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body>
+    <!-- Particules animées -->
+    <div class="particles" id="particles"></div>
+
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <div class="logo" id="logoBtn">
+                <img src="images/controller-removebg-preview.png" alt="🎮" class="logo-icon-img" onerror="this.style.display='none';this.nextElementSibling.style.display='inline'"><span class="logo-icon" style="display:none">🎮</span>
+                <span class="logo-text">Akinator<span class="logo-accent">Twitch</span></span>
+            </div>
+            
+            <nav class="nav">
+                <!-- Bouton Boutique -->
+                <button class="btn btn-ghost nav-btn" id="shopBtn">
+                    <i class="fa-solid fa-cart-shopping icon"></i> Boutique
+                </button>
+                
+                <!-- Affichage des jetons (connecté) -->
+                <div class="token-display" id="tokenDisplay" style="display: none;">
+                    <span class="coin-icon-small"></span>
+                    <span class="token-count" id="tokenCount">0</span>
+                </div>
+                
+                <!-- Boutons Auth (non connecté) -->
+                <div class="auth-buttons" id="authButtons">
+                    <button class="btn btn-ghost" id="loginBtn">Connexion</button>
+                    <button class="btn btn-primary" id="registerBtn">Inscription</button>
+                </div>
+                
+                <!-- Menu utilisateur (connecté) -->
+                <div class="user-menu" id="userMenu" style="display: none;">
+                    <button class="btn btn-ghost nav-btn" id="adminBtn" style="display: none;" title="Panneau d'administration">
+                        <i class="fa-solid fa-shield-halved icon"></i> Admin
+                    </button>
+                    <span class="user-name" id="userName" title="Voir mon profil">
+                        <img id="headerAvatar" class="header-avatar" src="images/profile-removebg-preview.png" alt="Avatar">
+                        <span id="userNameText"></span>
+                    </span>
+                </div>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main">
+        <!-- Hero Section -->
+        <section class="hero" id="heroSection">
+            <div class="hero-content">
+                <h1 class="hero-title">
+                    Trouvez votre
+                    <span class="gradient-text">prochain jeu</span>
+                    préféré
+                </h1>
+                <p class="hero-subtitle">
+                    Répondez à quelques questions et laissez notre IA vous recommander 
+                    les meilleurs jeux vidéo adaptés à vos goûts.
+                </p>
+                <div class="hero-actions">
+                    <button class="btn btn-large btn-primary pulse" id="startGameBtn">
+                        <i class="fa-solid fa-crosshairs icon"></i> Commencez votre recherche
+                    </button>
+                    <button class="btn btn-large btn-ghost" id="leaderboardBtn">
+                        <i class="fa-solid fa-trophy icon"></i> Classement
+                    </button>
+                    <p class="hero-note">1 jeton par partie • 3 jetons offerts à l'inscription</p>
+                </div>
+            </div>
+            <div class="hero-visual">
+                <div class="floating-cards">
+                    <img src="images/akinator1.png" alt="Akinator" class="akinator-hero-image floating">
+                    
+                    <!-- Bulles de dialogue animées -->
+                    <div class="speech-bubble speech-bubble-left" id="speechBubble1">
+                        <div class="bubble-content">Commencez votre recherche</div>
+                        <div class="bubble-tail"></div>
+                    </div>
+                    
+                    <div class="speech-bubble speech-bubble-right" id="speechBubble2">
+                        <div class="bubble-content">Trouvez votre jeu idéal</div>
+                        <div class="bubble-tail"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Shop Section (Boutique) -->
+        <section class="shop-section" id="shopSection" style="display: none;">
+            <div class="shop-container">
+                <button class="back-home-btn" id="backHomeBtn">← Retour à l'accueil</button>
+                
+                <div class="shop-header">
+                    <h1><i class="fa-solid fa-bag-shopping icon-title"></i> Boutique de Jetons</h1>
+                    <p>Achetez des jetons pour jouer plus de parties !</p>
+                    
+                    <div class="current-balance">
+                        <span>Votre solde actuel :</span>
+                        <span class="balance-amount" id="shopTokenBalance">0</span>
+                        <span class="coin-icon-small"></span>
+                    </div>
+                </div>
+
+                <!-- Jetons gratuits quotidiens -->
+                <div class="daily-section" id="dailySection">
+                    <div class="daily-card">
+                        <img src="images/gift-removebg-preview.png" alt="Cadeau" class="daily-icon-img-large" onerror="this.outerHTML='<div class=\'daily-icon\'>🎁</div>'">
+                        <div class="daily-info">
+                            <h3>Jetons Quotidiens Gratuits</h3>
+                            <p>Récupérez 3 jetons gratuits chaque jour !</p>
+                        </div>
+                        <button class="btn btn-accent btn-large" id="claimDailyBtn">
+                            Récupérer
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Packs de jetons -->
+                <h2 class="shop-subtitle">Packs de Jetons</h2>
+                <div class="token-packs-grid">
+                    <div class="shop-pack" data-pack="pack_10">
+                        <div class="pack-icon-sprite coin"></div>
+                        <div class="pack-amount">10 jetons</div>
+                        <div class="pack-price">~0.50€</div>
+                    </div>
+                    
+                    <div class="shop-pack popular" data-pack="pack_25">
+                        <div class="pack-badge"><i class="fa-solid fa-star icon-badge"></i> Populaire</div>
+                        <div class="pack-icon-sprite moneybag"></div>
+                        <div class="pack-amount">25 jetons</div>
+                        <div class="pack-price">~1€</div>
+                    </div>
+                    
+                    <div class="shop-pack" data-pack="pack_50">
+                        <div class="pack-icon-sprite chest"></div>
+                        <div class="pack-amount">50 jetons</div>
+                        <div class="pack-price">~1.80€</div>
+                    </div>
+                    
+                    <div class="shop-pack best-value" data-pack="pack_100">
+                        <div class="pack-badge"><i class="fa-solid fa-fire icon-badge"></i> Meilleur prix</div>
+                        <div class="pack-icon-sprite crown"></div>
+                        <div class="pack-amount">100 jetons</div>
+                        <div class="pack-price">~3€</div>
+                    </div>
+                </div>
+
+                <!-- Section paiement BTCPay -->
+                <div class="payment-section" id="paymentSection" style="display: none;">
+                    <h3 style="display:flex;align-items:center;gap:0.6rem;">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="26" height="26" style="flex-shrink:0;">
+                            <rect width="100" height="100" rx="18" fill="#F7931A"/>
+                            <path d="M68 44c1.2-8-4.9-12.3-13.3-15.2l2.7-10.8-6.6-1.6-2.6 10.6-5.3-1.3 2.6-10.6-6.6-1.6-2.7 10.8-13.3-3.3-1.8 7s4.9 1.1 4.8 1.2c2.7.7 3.2 2.5 3.1 3.9l-7.4 29.7c-.3 1.3-1.6 2.3-3.4 1.8 0 0-4.8-1.2-4.8-1.2L11 71l13 3.3-2.7 10.9 6.6 1.6 2.7-10.9 5.3 1.3-2.7 10.9 6.6 1.6 2.7-10.9c11.1 2.1 19.4.8 22.9-8.8 2.8-8-.1-12.6-5.9-15.6 4.2-1 7.3-3.7 8.5-9.4zM54 67.8c-2 8-15.4 3.7-19.7 2.6l3.5-14c4.4 1.1 18.4 3.3 16.2 11.4zm2-24.1c-1.8 7.2-13 4-16.7 3l3.2-12.8c3.7 1 15.5 2.5 13.5 9.8z" fill="white"/>
+                        </svg>
+                        Paiement BTCPay Server
+                    </h3>
+                    <p style="color:var(--text-secondary);margin:var(--spacing-sm) 0;font-size:0.88rem;">
+                        BTC · ETH · LTC et +50 cryptos · Vérification automatique · Open-source
+                    </p>
+
+                    <!-- Montant sélectionné -->
+                    <div style="text-align:center;margin:var(--spacing-md) 0;">
+                        <span id="btcpayAmountPreview" style="font-size:1.4rem;font-weight:700;color:var(--accent);"></span>
+                    </div>
+
+                    <!-- Bouton paiement -->
+                    <div id="btcpayCreateSection">
+                        <button class="btn btn-primary btn-full" id="createBTCPayInvoiceBtn">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="18" height="18" style="margin-right:6px;vertical-align:middle;flex-shrink:0;">
+                                <rect width="100" height="100" rx="18" fill="rgba(255,255,255,0.9)"/>
+                                <path d="M68 44c1.2-8-4.9-12.3-13.3-15.2l2.7-10.8-6.6-1.6-2.6 10.6-5.3-1.3 2.6-10.6-6.6-1.6-2.7 10.8-13.3-3.3-1.8 7s4.9 1.1 4.8 1.2c2.7.7 3.2 2.5 3.1 3.9l-7.4 29.7c-.3 1.3-1.6 2.3-3.4 1.8 0 0-4.8-1.2-4.8-1.2L11 71l13 3.3-2.7 10.9 6.6 1.6 2.7-10.9 5.3 1.3-2.7 10.9 6.6 1.6 2.7-10.9c11.1 2.1 19.4.8 22.9-8.8 2.8-8-.1-12.6-5.9-15.6 4.2-1 7.3-3.7 8.5-9.4zM54 67.8c-2 8-15.4 3.7-19.7 2.6l3.5-14c4.4 1.1 18.4 3.3 16.2 11.4zm2-24.1c-1.8 7.2-13 4-16.7 3l3.2-12.8c3.7 1 15.5 2.5 13.5 9.8z" fill="#F7931A"/>
+                            </svg>
+                            Payer avec BTCPay
+                        </button>
+                    </div>
+
+                    <!-- Section invoice créée -->
+                    <div id="btcpayInvoiceSection" style="display:none;">
+                        <div class="payment-address-box" style="margin-top:var(--spacing-md);">
+                            <p style="color:var(--text-muted);font-size:0.78rem;margin-bottom:4px;">Invoice ID</p>
+                            <code id="btcpayInvoiceIdDisplay" style="font-size:0.78rem;word-break:break-all;"></code>
+                        </div>
+                        <a id="btcpayCheckoutLink" href="#" target="_blank" rel="noopener"
+                           class="btn btn-accent btn-full" style="margin-top:var(--spacing-md);display:none;">
+                            <i class="fa-solid fa-arrow-up-right-from-square icon"></i> Ouvrir le checkout BTCPay
+                        </a>
+                        <div style="margin-top:var(--spacing-md);padding:var(--spacing-md);border-radius:var(--radius-md);background:var(--bg-card);text-align:center;border:1px solid var(--border);">
+                            <div id="btcpaySpinner" style="margin-bottom:var(--spacing-sm);">
+                                <i class="fa-solid fa-circle-notch fa-spin" style="color:var(--accent);font-size:1.5rem;"></i>
+                            </div>
+                            <p id="btcpayStatusText" style="color:var(--text-secondary);margin:0;font-size:0.9rem;">En attente du paiement...</p>
+                        </div>
+                    </div>
+
+                    <p style="margin-top:var(--spacing-md);color:var(--text-muted);font-size:0.78rem;text-align:center;">
+                        <i class="fa-solid fa-shield-halved icon-sm"></i>
+                        Webhook signé HMAC-SHA256 · Aucune clé privée stockée côté serveur
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Admin Section -->
+        <section class="admin-section" id="adminSection" style="display: none;">
+            <div class="admin-container">
+                <div class="admin-header">
+                    <h1><i class="fa-solid fa-shield-halved icon-title"></i> Panneau d'Administration</h1>
+                    <button class="btn btn-ghost" id="backHomeFromAdminBtn">
+                        <i class="fa-solid fa-arrow-left icon"></i> Retour à l'accueil
+                    </button>
+                </div>
+
+                <!-- Statistiques -->
+                <div class="admin-stats" id="adminStats">
+                    <h2>Statistiques</h2>
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-icon"><i class="fa-solid fa-users"></i></div>
+                            <div class="stat-value" id="statUsers">-</div>
+                            <div class="stat-label">Utilisateurs</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon"><i class="fa-solid fa-gamepad"></i></div>
+                            <div class="stat-value" id="statGames">-</div>
+                            <div class="stat-label">Parties</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon"><i class="fa-solid fa-coins"></i></div>
+                            <div class="stat-value" id="statTokens">-</div>
+                            <div class="stat-label">Jetons totaux</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Actions rapides -->
+                <div class="admin-actions">
+                    <h2>Actions</h2>
+                    <div class="actions-grid">
+                        <button class="btn btn-primary" id="cleanupIPsBtn">
+                            <i class="fa-solid fa-broom icon"></i> Nettoyer les IPs anciennes
+                        </button>
+                        <button class="btn btn-primary" id="refreshUsersBtn">
+                            <i class="fa-solid fa-arrows-rotate icon"></i> Actualiser la liste
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Transactions en attente -->
+                <div class="admin-transactions" id="adminTransactionsSection">
+                    <h2><i class="fa-solid fa-bitcoin-sign icon"></i> Transactions en attente</h2>
+                    <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:var(--spacing-md);">
+                        Adresse BTC de réception : <code style="font-size:0.8rem;word-break:break-all;">bc1qkm9qyw73f5n5fpj8etgytqczl3hjnafy6xrvs0</code>
+                    </p>
+                    <div class="users-table-container">
+                        <table class="users-table">
+                            <thead>
+                                <tr>
+                                    <th>Utilisateur</th>
+                                    <th>Jetons</th>
+                                    <th>Invoice ID</th>
+                                    <th>Date</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pendingTransactionsBody">
+                                <tr><td colspan="5" style="text-align:center;padding:2rem;">Chargement...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Liste des utilisateurs -->
+                <div class="admin-users">
+                    <h2>Utilisateurs</h2>
+                    <div class="users-table-container">
+                        <table class="users-table">
+                            <thead>
+                                <tr>
+                                    <th>Username</th>
+                                    <th>Jetons</th>
+                                    <th>Parties</th>
+                                    <th>Créé le</th>
+                                    <th>Dernière connexion</th>
+                                    <th>Admin</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="usersTableBody">
+                                <tr><td colspan="7" style="text-align: center; padding: 2rem;">Chargement...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Game Section -->
+        <section class="game-section" id="gameSection" style="display: none;">
+            <div class="game-container">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                
+                <div class="breadcrumb" id="breadcrumb">
+                    <span class="breadcrumb-item active"><i class="fa-solid fa-house icon-sm"></i> Accueil</span>
+                </div>
+
+                <div class="question-card" id="questionCard">
+                    <h2 class="question-text" id="questionText">Quel type de jeu recherchez-vous ?</h2>
+                    
+                    <div class="options-grid" id="optionsGrid"></div>
+
+                    <div class="game-actions">
+                        <button class="btn btn-ghost" id="backBtn" style="display: none;">
+                            ← Retour
+                        </button>
+                        <button class="btn btn-accent" id="recommendBtn" style="display: none;">
+                            <i class="fa-solid fa-wand-magic-sparkles icon"></i> Voir les recommandations
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Results Section -->
+        <section class="results-section" id="resultsSection" style="display: none;">
+            <div class="results-container">
+                <div class="results-header">
+                    <h2><i class="fa-solid fa-gamepad icon-title"></i> Jeux recommandés pour vous</h2>
+                    <p class="results-filters" id="resultsFilters"></p>
+                </div>
+                
+                <div class="games-grid" id="gamesGrid"></div>
+
+                <div class="results-actions">
+                    <button class="btn btn-large btn-primary" id="restartGameBtn">
+                        <i class="fa-solid fa-rotate icon"></i> Nouvelle recherche
+                    </button>
+                    <button class="btn btn-ghost" id="homeFromResultsBtn">
+                        <i class="fa-solid fa-house icon"></i> Retour à l'accueil
+                    </button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Login Modal -->
+    <div class="modal" id="loginModal">
+        <div class="modal-backdrop" data-close="loginModal"></div>
+        <div class="modal-content">
+            <button class="modal-close" data-close="loginModal">×</button>
+            <h2><i class="fa-solid fa-right-to-bracket icon-title"></i> Connexion</h2>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="loginUsername">Nom d'utilisateur</label>
+                    <input type="text" id="loginUsername" required autocomplete="username" placeholder="VotreUsername">
+                </div>
+                <div class="form-group">
+                    <label for="loginPassword">Mot de passe</label>
+                    <div class="password-wrapper">
+                        <input type="password" id="loginPassword" required autocomplete="current-password" placeholder="••••••••">
+                        <button type="button" class="password-toggle" data-target="loginPassword">
+                            <i class="fa-solid fa-eye icon-sm"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="form-error" id="loginError"></div>
+                <button type="submit" class="btn btn-primary btn-full" id="loginSubmitBtn">
+                    Se connecter
+                </button>
+            </form>
+            <p class="modal-footer">
+                Pas encore de compte ?
+                <a href="#" id="switchToRegister">Inscrivez-vous</a>
+            </p>
+            <p class="modal-footer">
+                <a href="#" id="forgotPasswordLink" style="color:var(--text-muted);font-size:0.85rem;">Mot de passe oublié ?</a>
+            </p>
+        </div>
+    </div>
+
+    <!-- Forgot Password Modal -->
+    <div class="modal" id="forgotPasswordModal">
+        <div class="modal-backdrop" data-close="forgotPasswordModal"></div>
+        <div class="modal-content">
+            <button class="modal-close" data-close="forgotPasswordModal">×</button>
+            <h2><i class="fa-solid fa-key icon-title"></i> Récupérer l'accès</h2>
+            <div class="info-box" style="background:rgba(145,70,255,0.1);border:1px solid rgba(145,70,255,0.3);border-radius:var(--radius-sm);padding:var(--spacing-sm);margin-bottom:var(--spacing-md);font-size:0.85rem;color:var(--text-secondary);">
+                <i class="fa-solid fa-shield-halved" style="color:var(--primary);margin-right:6px;"></i>
+                Sans email ni téléphone, votre <strong>application d'authentification (A2F)</strong> est votre clé de récupération. Assurez-vous de l'avoir activée !
+            </div>
+            <form id="forgotPasswordForm">
+                <div class="form-group">
+                    <label for="forgotUsername">Nom d'utilisateur</label>
+                    <input type="text" id="forgotUsername" required placeholder="VotreUsername">
+                </div>
+                <div class="form-group">
+                    <label for="forgotA2FCode">Code A2F (Google Authenticator, Authy…)</label>
+                    <input type="text" id="forgotA2FCode" maxlength="6" pattern="[0-9]{6}" placeholder="000000" class="a2f-code-input" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="forgotNewPassword">Nouveau mot de passe</label>
+                    <div class="password-wrapper">
+                        <input type="password" id="forgotNewPassword" required minlength="8" placeholder="Min 8 car. avec majuscule et chiffre">
+                        <button type="button" class="password-toggle" data-target="forgotNewPassword">
+                            <i class="fa-solid fa-eye icon-sm"></i>
+                        </button>
+                    </div>
+                    <small class="form-hint">Minimum 8 caractères avec majuscule, minuscule et chiffre</small>
+                </div>
+                <div class="form-group">
+                    <label for="forgotConfirmPassword">Confirmer le mot de passe</label>
+                    <div class="password-wrapper">
+                        <input type="password" id="forgotConfirmPassword" required placeholder="••••••••">
+                        <button type="button" class="password-toggle" data-target="forgotConfirmPassword">
+                            <i class="fa-solid fa-eye icon-sm"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="form-error" id="forgotPasswordError"></div>
+                <button type="submit" class="btn btn-primary btn-full" id="forgotPasswordSubmitBtn">
+                    <i class="fa-solid fa-lock-open icon"></i> Réinitialiser le mot de passe
+                </button>
+            </form>
+            <p class="modal-footer" style="font-size:0.8rem;color:var(--text-muted);">
+                Vous n'avez pas activé l'A2F ? Contactez un administrateur.
+            </p>
+        </div>
+    </div>
+
+    <!-- Register Modal -->
+    <div class="modal" id="registerModal">
+        <div class="modal-backdrop" data-close="registerModal"></div>
+        <div class="modal-content">
+            <button class="modal-close" data-close="registerModal" aria-label="Fermer">×</button>
+            <div class="modal-header">
+                <h2>Inscription</h2>
+                <div class="modal-benefits">
+                    <span class="benefit-item">
+                        <i class="fa-solid fa-gift"></i>
+                        <span>3 jetons offerts</span>
+                    </span>
+                    <span class="benefit-separator">+</span>
+                    <span class="benefit-item">
+                        <i class="fa-solid fa-coins"></i>
+                        <span>3 jetons/jour</span>
+                    </span>
+                </div>
+            </div>
+            <form id="registerForm">
+                <div class="form-group">
+                    <label for="regUsername">Nom d'utilisateur</label>
+                    <input type="text" id="regUsername" required minlength="3" maxlength="20" 
+                           pattern="[a-zA-Z0-9_]+" placeholder="MonPseudo123"
+                           title="3-20 caractères : lettres, chiffres et underscore">
+                </div>
+                <div class="form-group">
+                    <label for="regPassword">Mot de passe</label>
+                    <div class="password-wrapper">
+                        <input type="password" id="regPassword" required minlength="8" 
+                               placeholder="Min 8 car. avec majuscule et chiffre">
+                        <button type="button" class="password-toggle" data-target="regPassword">
+                            <i class="fa-solid fa-eye icon-sm"></i>
+                        </button>
+                    </div>
+                    <small class="form-hint">Minimum 8 caractères avec majuscule, minuscule et chiffre</small>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="rgpdConsent" required>
+                        <span>J'accepte le traitement de mes données personnelles conformément au <a href="politique-confidentialite.html" target="_blank" class="link">RGPD</a>. Mes données (nom d'utilisateur, adresse IP chiffrée) seront conservées pour la durée de mon compte. Les IPs sont automatiquement supprimées après 12 mois.</span>
+                    </label>
+                </div>
+                <div class="form-error" id="registerError"></div>
+                <button type="submit" class="btn btn-primary btn-full" id="registerSubmitBtn">
+                    Créer mon compte
+                </button>
+            </form>
+            <p class="modal-footer">
+                Déjà un compte ? 
+                <a href="#" id="switchToLogin">Connectez-vous</a>
+            </p>
+        </div>
+    </div>
+
+    <!-- Profile Modal -->
+    <div class="modal" id="profileModal">
+        <div class="modal-backdrop" data-close="profileModal"></div>
+        <div class="modal-content modal-large">
+            <button class="modal-close" data-close="profileModal">×</button>
+            
+            <!-- Tabs de navigation -->
+            <div class="profile-tabs">
+                <button class="profile-tab active" data-tab="overview">Profil</button>
+                <button class="profile-tab" data-tab="history">Historique</button>
+                <button class="profile-tab" data-tab="security">Sécurité</button>
+            </div>
+
+            <!-- Tab Profil -->
+            <div class="profile-tab-content active" id="tab-overview">
+                <div class="profile-info">
+                    <div class="profile-avatar-wrapper">
+                        <div class="profile-avatar" id="profileAvatar">
+                            <img src="images/profile-removebg-preview.png" alt="Profil" class="avatar-img" id="profileAvatarImg" onerror="this.src='images/profile-removebg-preview.png'">
+                        </div>
+                        <label class="avatar-upload-btn" for="avatarInput" title="Changer la photo">
+                            <i class="fa-solid fa-camera icon-sm"></i>
+                        </label>
+                        <input type="file" id="avatarInput" accept="image/jpeg,image/png,image/webp" style="display:none">
+                    </div>
+                    <div class="profile-details">
+                        <h3 id="profileUsername">-</h3>
+                        <p class="profile-date">Membre depuis : <span id="profileDate">-</span></p>
+                    </div>
+                </div>
+
+                <div class="profile-stats">
+                    <div class="stat-card">
+                        <span class="stat-value" id="profileTokens">0</span>
+                        <span class="stat-label"><span class="coin-icon-tiny"></span> Jetons</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-value" id="profileGames">0</span>
+                        <span class="stat-label"><span class="controller-icon-tiny"></span> Parties</span>
+                    </div>
+                </div>
+
+                <div class="profile-daily" id="profileDailySection">
+                    <button class="btn btn-accent btn-full" id="profileClaimDaily">
+                        <img src="images/gift-removebg-preview.png" alt="" class="btn-icon-img"> Récupérer mes 3 jetons quotidiens
+                    </button>
+                </div>
+
+                <div class="profile-actions">
+                    <button class="btn btn-primary btn-full" id="goToShopFromProfile">
+                        <i class="fa-solid fa-cart-shopping icon"></i> Acheter des jetons
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tab Historique -->
+            <div class="profile-tab-content" id="tab-history">
+                <h3 class="settings-title"><i class="fa-solid fa-clock-rotate-left icon-title-sm"></i> Historique des parties</h3>
+                <div id="gameHistoryList" class="game-history-list">
+                    <p style="color:var(--text-muted);text-align:center;padding:2rem;">Chargement...</p>
+                </div>
+            </div>
+
+            <!-- Tab Sécurité -->
+            <div class="profile-tab-content" id="tab-security">
+                <h3 class="settings-title"><i class="fa-solid fa-shield-halved icon-title-sm"></i> Paramètres de sécurité</h3>
+                
+                <!-- Changer le mot de passe -->
+                <div class="settings-section">
+                    <h4>Changer le mot de passe</h4>
+                    <form id="changePasswordForm">
+                        <div class="form-group">
+                            <label for="currentPassword">Mot de passe actuel</label>
+                            <div class="password-wrapper">
+                                <input type="password" id="currentPassword" required placeholder="••••••••">
+                                <button type="button" class="password-toggle" data-target="currentPassword"><i class="fa-solid fa-eye icon-sm"></i></button>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="newPassword">Nouveau mot de passe</label>
+                            <div class="password-wrapper">
+                                <input type="password" id="newPassword" required minlength="8" placeholder="Min 8 caractères">
+                                <button type="button" class="password-toggle" data-target="newPassword"><i class="fa-solid fa-eye icon-sm"></i></button>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="confirmPassword">Confirmer le nouveau mot de passe</label>
+                            <div class="password-wrapper">
+                                <input type="password" id="confirmPassword" required placeholder="••••••••">
+                                <button type="button" class="password-toggle" data-target="confirmPassword"><i class="fa-solid fa-eye icon-sm"></i></button>
+                            </div>
+                        </div>
+                        <!-- Champ A2F affiché uniquement si A2F activé -->
+                        <div class="form-group" id="changePasswordA2FGroup" style="display:none;">
+                            <label for="changePasswordA2FCode">
+                                <i class="fa-solid fa-shield-halved" style="color:var(--primary);margin-right:4px;"></i>
+                                Code A2F requis
+                            </label>
+                            <input type="text" id="changePasswordA2FCode" maxlength="6" pattern="[0-9]{6}"
+                                   placeholder="000000" class="a2f-code-input" autocomplete="off">
+                            <small class="form-hint">Votre application génère ce code toutes les 30 secondes</small>
+                        </div>
+                        <div class="form-error" id="passwordError"></div>
+                        <button type="submit" class="btn btn-primary">Mettre à jour</button>
+                    </form>
+                </div>
+
+                <!-- A2F -->
+                <div class="settings-section">
+                    <h4>Authentification à deux facteurs (A2F)</h4>
+                    <div class="a2f-status" id="a2fStatus">
+                        <span class="a2f-badge disabled">Désactivé</span>
+                        <p>Protégez votre compte avec une couche de sécurité supplémentaire.</p>
+                    </div>
+                    <button class="btn btn-ghost" id="toggleA2F">
+                        <i class="fa-solid fa-lock icon"></i> Activer l'A2F
+                    </button>
+                    <p class="settings-note">L'A2F utilise une application comme Google Authenticator ou Authy.</p>
+                </div>
+
+                <!-- Déconnexion -->
+                <div class="settings-section danger-zone">
+                    <h4>Session</h4>
+                    <button class="btn btn-danger btn-full" id="logoutFromProfile">
+                        <i class="fa-solid fa-right-from-bracket icon"></i> Se déconnecter
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaderboard Modal -->
+    <div class="modal" id="leaderboardModal">
+        <div class="modal-backdrop" data-close="leaderboardModal"></div>
+        <div class="modal-content">
+            <button class="modal-close" data-close="leaderboardModal">×</button>
+            <h2><i class="fa-solid fa-trophy icon-title" style="color:#F7931A;"></i> Classement</h2>
+            <div id="leaderboardList" class="leaderboard-list">
+                <p style="color:var(--text-muted);text-align:center;padding:2rem;">Chargement...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <p>&copy; 2026 AkinatorTwitch. Tous droits réservés.</p>
+            <div class="footer-links">
+                <a href="#" id="privacyPolicyLink">Politique de Confidentialité</a>
+                <span class="footer-separator">|</span>
+                <a href="#" id="dataProcessingLink">Traitement des Données</a>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Privacy Policy Modal -->
+    <div class="modal" id="privacyModal">
+        <div class="modal-backdrop" data-close="privacyModal"></div>
+        <div class="modal-content modal-legal">
+            <button class="modal-close" data-close="privacyModal">×</button>
+            <h2>Politique de Confidentialité</h2>
+            <div class="legal-content" id="privacyContent"></div>
+        </div>
+    </div>
+
+    <!-- Data Processing Modal -->
+    <div class="modal" id="dataModal">
+        <div class="modal-backdrop" data-close="dataModal"></div>
+        <div class="modal-content modal-legal">
+            <button class="modal-close" data-close="dataModal">×</button>
+            <h2>Traitement des Données Personnelles</h2>
+            <div class="legal-content" id="dataContent"></div>
+        </div>
+    </div>
+
+    <!-- A2F Setup Modal -->
+    <div class="modal" id="a2fSetupModal">
+        <div class="modal-backdrop" data-close="a2fSetupModal"></div>
+        <div class="modal-content">
+            <button class="modal-close" data-close="a2fSetupModal">×</button>
+            <h2><i class="fa-solid fa-shield icon-title"></i> Configuration de l'A2F</h2>
+            
+            <div class="a2f-setup-steps">
+                <div class="a2f-step">
+                    <span class="step-number">1</span>
+                    <p>Scannez ce QR code avec votre application d'authentification (Google Authenticator, Authy, etc.)</p>
+                </div>
+                
+                <div class="qr-code-container" id="qrCodeContainer">
+                    <div class="qr-loading">Génération du QR code...</div>
+                </div>
+                
+                <div class="a2f-secret" id="a2fSecretDisplay" style="display: none;">
+                    <p>Ou entrez ce code manuellement :</p>
+                    <code id="a2fSecretCode"></code>
+                </div>
+                
+                <div class="a2f-step">
+                    <span class="step-number">2</span>
+                    <p>Entrez le code à 6 chiffres affiché dans l'application :</p>
+                </div>
+                
+                <div class="form-group">
+                    <input type="text" id="a2fVerifyCode" maxlength="6" pattern="[0-9]{6}" 
+                           placeholder="000000" class="a2f-code-input" autocomplete="off">
+                </div>
+                
+                <button class="btn btn-primary btn-full" id="verifyA2FSetup">
+                    Activer l'A2F
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- A2F Login Modal -->
+    <div class="modal" id="a2fLoginModal">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+            <h2><i class="fa-solid fa-shield icon-title"></i> Vérification A2F</h2>
+            <p class="modal-subtitle">Entrez le code de votre application d'authentification</p>
+            
+            <div class="form-group">
+                <input type="text" id="a2fLoginCode" maxlength="6" pattern="[0-9]{6}" 
+                       placeholder="000000" class="a2f-code-input" autocomplete="off">
+            </div>
+            <div class="form-error" id="a2fLoginError"></div>
+            
+            <button class="btn btn-primary btn-full" id="verifyA2FLogin">
+                Vérifier
+            </button>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+        <p id="loadingText">Chargement...</p>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/api.js"></script>
+    <script src="js/wallet.js"></script>
+    <script src="js/game.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
