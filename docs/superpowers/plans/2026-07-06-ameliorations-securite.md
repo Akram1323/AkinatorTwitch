@@ -1505,7 +1505,7 @@ const a2fLimiter = rateLimit({
 });
 ```
 
-Remplacements : dans `routes/auth.js` (verify-login-a2f ligne ~459, change-password ligne ~640, forgot-password ligne ~728) et `routes/a2f.js` (verify-setup ligne ~92, verify ligne ~141, disable ligne ~183), remplacer chaque bloc :
+Remplacements : dans `routes/auth.js` (verify-login-a2f ligne ~459, change-password ligne ~640, forgot-password ligne ~728) et `routes/a2f.js` (verify-setup ligne ~92, verify ligne ~141, disable ligne ~182), remplacer chaque bloc :
 
 ```js
         const isValid = speakeasy.totp.verify({ secret: user.a2f_secret, encoding: 'base32', token: code, window: 1 });
