@@ -459,7 +459,7 @@ router.get('/cleanup-ips', async (req, res) => {
 router.get('/audit', async (req, res) => {
     try {
         const db = require('../services/database').db;
-        const limit = Math.min(parseInt(req.query.limit) || 100, 500);
+        const limit = Math.min(Math.max(parseInt(req.query.limit) || 100, 1), 500);
         const entries = db.prepare('SELECT * FROM audit_log ORDER BY id DESC LIMIT ?').all(limit);
 
         res.json({ success: true, data: { entries } });
