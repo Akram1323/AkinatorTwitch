@@ -1,15 +1,48 @@
 /**
- * Journal d'audit inviolable (tamper-evident).
- * Chaque entrée embarque hash_n = SHA256(payload_n || hash_n-1).
- * Toute modification/suppression a posteriori casse la chaîne,
- * détectable par verifyAuditChain() → non-répudiation / forensics.
+ * Journal d'audit tamper-evident à chaînage HMAC.
+ * Chaque entrée embarque hash_n = HMAC-SHA256(clé, payload_n || hash_n-1),
+ * la clé (AUDIT_HMAC_KEY) étant conservée HORS de la base. Un attaquant
+ * disposant d'un accès en écriture à la DB mais pas de la clé ne peut donc
+ * pas recalculer une chaîne valide après altération.
+ * Garanties réelles : détecte toute altération partielle, insertion ou
+ * suppression interne (verifyAuditChain). Limites : ne détecte PAS la
+ * troncature de queue (suppression des dernières lignes) sans ancrage externe.
  */
 const crypto = require('crypto');
+const config = require('../config/config');
 const { db } = require('./database');
+
+/**
+ * Charge AUDIT_HMAC_KEY depuis l'environnement.
+ * - Production : obligatoire, 64 hex → sinon arrêt (le journal ne serait pas protégé).
+ * - Dev/test : fallback dérivé de JWT_SECRET (avec avertissement), pour ne pas bloquer.
+ */
+function loadAuditKey() {
+    const raw = process.env.AUDIT_HMAC_KEY;
+    const isProd = process.env.NODE_ENV === 'production';
+    if (raw) {
+        if (!/^[0-9a-fA-F]{64}$/.test(raw)) {
+            console.error('❌ AUDIT_HMAC_KEY invalide : 64 caractères hexadécimaux attendus (32 octets).');
+            console.error('   Générer une clé : node scripts/generate-keys.js');
+            process.exit(1);
+        }
+        return Buffer.from(raw, 'hex');
+    }
+    if (isProd) {
+        console.error('❌ AUDIT_HMAC_KEY manquante en production : le journal d\'audit ne serait pas inviolable.');
+        console.error('   Générer une clé : node scripts/generate-keys.js');
+        process.exit(1);
+    }
+    console.warn('⚠️ AUDIT_HMAC_KEY absente : clé dérivée de JWT_SECRET (dev uniquement).');
+    return crypto.createHash('sha256').update(config.jwt.secret + 'audit_hmac_salt').digest();
+}
+
+// Clé HMAC du journal d'audit (32 octets), attendue en hex (64 caractères), hors base.
+const AUDIT_HMAC_KEY = loadAuditKey();
 
 function computeHash(eventType, userId, ipHash, detailsJson, createdAt, prevHash) {
     const payload = [eventType, userId || '', ipHash || '', detailsJson, createdAt].join('|');
-    return crypto.createHash('sha256').update(payload + prevHash).digest('hex');
+    return crypto.createHmac('sha256', AUDIT_HMAC_KEY).update(payload + prevHash).digest('hex');
 }
 
 /**
