@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "init-db": "node services/initDatabase.js"
+    "init-db": "node services/initDatabase.js",
+    "test": "node --test --test-force-exit tests/"
   },
   "keywords": [
     "akinator",
@@ -34,5 +35,8 @@
     "sharp": "^0.34.5",
     "speakeasy": "^2.0.0",
     "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "supertest": "^7.2.2"
   }
 }

@@ -321,5 +321,9 @@ process.on('SIGTERM', () => {
     process.exit(0);
 });
 
-// Démarrer
-startServer();
+// Démarrer uniquement si lancé directement (pas en test)
+if (require.main === module) {
+    startServer();
+}
+
+module.exports = { app };

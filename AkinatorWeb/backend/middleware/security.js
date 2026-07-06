@@ -41,7 +41,7 @@ const helmetConfig = helmet({
  */
 const globalLimiter = rateLimit({
     windowMs: config.security.rateLimitWindowMs,
-    max: config.security.rateLimitMaxRequests,
+    max: config.isTest ? 10000 : config.security.rateLimitMaxRequests,
     message: {
         success: false,
         error: 'Trop de requêtes, veuillez réessayer plus tard'
@@ -55,7 +55,7 @@ const globalLimiter = rateLimit({
  */
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 10, // 10 tentatives max par IP
+    max: config.isTest ? 10000 : 10, // 10 tentatives max par IP
     message: {
         success: false,
         error: 'Trop de tentatives de connexion, réessayez dans 15 minutes'
@@ -67,7 +67,7 @@ const authLimiter = rateLimit({
  */
 const registerLimiter = rateLimit({
     windowMs: 60 * 60 * 1000, // 1 heure
-    max: config.isDev ? 50 : 10, // 50 en dev, 10 en prod
+    max: config.isTest ? 10000 : (config.isDev ? 50 : 10), // 50 en dev, 10 en prod
     message: {
         success: false,
         error: 'Trop de tentatives d\'inscription, réessayez dans une heure'
@@ -79,7 +79,7 @@ const registerLimiter = rateLimit({
  */
 const paymentLimiter = rateLimit({
     windowMs: 60 * 1000, // 1 minute
-    max: 3, // 3 requêtes max
+    max: config.isTest ? 10000 : 3, // 3 requêtes max
     message: {
         success: false,
         error: 'Veuillez patienter avant de soumettre un nouveau paiement'
