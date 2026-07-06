@@ -9,6 +9,7 @@ const { authenticateToken } = require('../middleware/security');
 const speakeasy = require('speakeasy');
 const QRCode = require('qrcode');
 const { db, queries } = require('../services/database');
+const { appendAudit } = require('../services/auditService');
 
 /**
  * POST /api/a2f/setup
@@ -108,6 +109,8 @@ router.post('/verify-setup', authenticateToken, async (req, res) => {
 
         console.log(`✅ A2F activé: ${user.username}`);
 
+        appendAudit('a2f.enabled', { userId: user.id });
+
         res.json({
             success: true,
             message: 'A2F activé avec succès'
@@ -198,6 +201,8 @@ router.post('/disable', authenticateToken, async (req, res) => {
         updateStmt.run(user.id);
 
         console.log(`🔓 A2F désactivé: ${user.username}`);
+
+        appendAudit('a2f.disabled', { userId: user.id });
 
         res.json({
             success: true,

@@ -19,6 +19,7 @@ const { users, transactions } = {
 const { authenticateToken, paymentLimiter } = require('../middleware/security');
 const db = require('../services/database').db;
 const btcpay = require('../services/btcpay');
+const { appendAudit } = require('../services/auditService');
 
 // Prix des packs en EUR pour BTCPay
 const PACK_EUR_PRICES = {
@@ -610,6 +611,7 @@ const handleBTCPayWebhook = async (req, res) => {
                 queries.users.updateTokens.run(tx.amount, tx.user_id);
                 queries.transactions.updateStatus.run('completed', tx.id);
                 console.log(`✅ BTCPay webhook: +${tx.amount} jetons pour user ${tx.user_id}`);
+                appendAudit('payment.webhook.settled', { userId: tx.user_id, details: { invoiceId, tokens: tx.amount } });
             } else if (tx && tx.status === 'completed') {
                 console.log(`ℹ️  BTCPay webhook: invoice ${invoiceId} déjà traitée`);
             } else {

@@ -21,8 +21,9 @@ const { body, validationResult } = require('express-validator');
 const config = require('../config/config');
 const { queries } = require('../services/database');
 const { authLimiter, registerLimiter, authenticateToken } = require('../middleware/security');
-const { encryptIP } = require('../services/encryption');
+const { encryptIP, hashIPForLogging } = require('../services/encryption');
 const tokenService = require('../services/tokenService');
+const { appendAudit } = require('../services/auditService');
 
 const router = express.Router();
 
@@ -119,6 +120,9 @@ router.post('/register',
             // Enregistrer la transaction de jetons offerts
             queries.transactions.create.run(uuidv4(), userId, 'gift', 3, null, 'completed');
 
+            // Journal d'audit (inscription)
+            appendAudit('auth.register', { userId, ipHash: hashIPForLogging(rawIP), details: { username } });
+
             // Générer la paire de jetons (access court + refresh rotatif) et poser les cookies
             const { accessToken, refreshToken } = tokenService.issueTokenPair({ id: userId, username, is_admin: 0 });
             setAuthCookies(res, accessToken, refreshToken);
@@ -188,6 +192,7 @@ router.post('/login',
             // Vérifier si le compte est verrouillé
             if (user.locked_until && new Date(user.locked_until) > new Date()) {
                 const remainingMinutes = Math.ceil((new Date(user.locked_until) - new Date()) / 60000);
+                appendAudit('auth.login.locked', { userId: user.id, ipHash: hashIPForLogging(rawIP) });
                 return res.status(423).json({
                     success: false,
                     error: `Compte temporairement verrouillé. Réessayez dans ${remainingMinutes} minutes.`
@@ -204,12 +209,14 @@ router.post('/login',
                 const remaining = MAX_LOGIN_ATTEMPTS - attempts;
                 
                 if (remaining <= 0) {
+                    appendAudit('auth.login.locked', { userId: user.id, ipHash: hashIPForLogging(rawIP) });
                     return res.status(423).json({
                         success: false,
                         error: `Trop de tentatives. Compte verrouillé pour ${LOCKOUT_DURATION_MINUTES} minutes.`
                     });
                 }
-                
+
+                appendAudit('auth.login.failed', { userId: user.id, ipHash: hashIPForLogging(rawIP), details: { username } });
                 return res.status(401).json({
                     success: false,
                     error: `Identifiants incorrects. ${remaining} tentative(s) restante(s).`
@@ -265,6 +272,8 @@ router.post('/login',
 
             // Ne pas logger l'IP en clair (conformité RGPD)
             console.log(`✅ Connexion: ${username}`);
+
+            appendAudit('auth.login.success', { userId: user.id, ipHash: hashIPForLogging(rawIP) });
 
             res.json({
                 success: true,
@@ -460,6 +469,7 @@ router.post('/verify-login-a2f',
             });
 
             if (!isValid) {
+                appendAudit('auth.2fa.failed', { userId: decoded.id, ipHash: hashIPForLogging(rawIP) });
                 return res.status(401).json({
                     success: false,
                     error: 'Code A2F incorrect'
@@ -484,6 +494,8 @@ router.post('/verify-login-a2f',
             }
 
             console.log(`✅ Connexion A2F: ${user.username}`);
+
+            appendAudit('auth.2fa.success', { userId: decoded.id, ipHash: hashIPForLogging(rawIP) });
 
             res.json({
                 success: true,
@@ -655,6 +667,8 @@ router.post('/change-password',
 
             console.log(`🔐 Mot de passe changé: ${user.username}`);
 
+            appendAudit('auth.password.changed', { userId: user.id });
+
             res.json({
                 success: true,
                 message: 'Mot de passe mis à jour avec succès'
@@ -768,6 +782,7 @@ router.post('/logout', authenticateToken, (req, res) => {
     }
     clearAuthCookies(res);
     console.log(`👋 Déconnexion: ${req.user.username}`);
+    appendAudit('auth.logout', { userId: req.user.id });
     res.json({ success: true, message: 'Déconnexion réussie' });
 });
 
@@ -789,6 +804,7 @@ router.post('/refresh', (req, res) => {
             : 'Session expirée, veuillez vous reconnecter';
         if (result.reason === 'reuse') {
             console.warn('⚠️ SECURITY: réutilisation de refresh token détectée');
+            appendAudit('auth.refresh.reuse_detected', { ipHash: hashIPForLogging(req.ip) });
         }
         return res.status(401).json({ success: false, error });
     }
