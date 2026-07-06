@@ -754,16 +754,21 @@ const API = {
 
 - [ ] **Step 4: Adapter `frontend/js/app.js`**
 
-Remplacer l'initialisation basée sur `API.loadToken()` par :
+Le code existant possède déjà `currentUser` (global, `app.js:10`) et `updateUIForLoggedInUser()` (`app.js:358`), et vérifie la session au chargement via un appel `/auth/me` (`app.js:~342-347`, motif `currentUser = response.data; updateUIForLoggedInUser();`). Réutiliser ces éléments plutôt que d'introduire une nouvelle UI. Remplacer l'initialisation basée sur `API.loadToken()` (`api.js:353`) par :
 
 ```js
 const user = await API.bootstrapSession();
 if (user) {
-    // afficher l'UI connectée avec `user` (mêmes champs que login: username, tokens, etc.)
+    currentUser = user;
+    updateUIForLoggedInUser();
+} else {
+    updateUIForLoggedOutUser();
 }
 ```
 
-Chercher tous les usages restants : `grep -rn "setToken\|loadToken\|auth_token\|localStorage" AkinatorWeb/frontend/js/` et les convertir (logout → `await API.post('/auth/logout', {})`).
+Chercher tous les usages restants et les convertir : `grep -rn "setToken\|loadToken\|auth_token\|localStorage" AkinatorWeb/frontend/js/`. Correspondances actuelles à traiter — `api.js:17` (`setToken`), `:48` (`loadToken`), `:124`/`:132`/`:166` (`this.setToken(response.data.token)` → `await this.onLogin()`), `:145` (`this.setToken(null)` sur logout → `await this.post('/auth/logout', {}); this.csrfToken = null;`), `:353` (`API.loadToken()` → `API.bootstrapSession()`). Supprimer `setToken`/`loadToken` et la propriété `this.token`.
+
+**Attention (snippets illustratifs)** : les extraits `api.js`/`app.js` de cette tâche sont indicatifs — l'implémenteur DOIT lire les fichiers réels, conserver les méthodes métier existantes (`get`/`post`, appels IGDB, boutique, etc.) et n'y appliquer que les conversions ci-dessus. Aucun test automatisé ne couvre le frontend : la vérification est manuelle (Step 5). Ne pas copier-coller à l'aveugle.
 
 - [ ] **Step 5: Vérification manuelle**
 
@@ -979,6 +984,8 @@ En tête de `routes/auth.js` :
 const { appendAudit } = require('../services/auditService');
 const { hashIPForLogging } = require('../services/encryption');
 ```
+
+Variable IP : dans **register** (`auth.js:92`), **login** (`:173`) et **verify-login-a2f** (`:445`), la variable locale `rawIP` existe déjà et doit être réutilisée. Dans **logout**, **refresh** et **change-password**, elle n'est pas en portée → utiliser `req.ip` directement.
 
 Points d'insertion (le motif est identique partout : une ligne après l'action réussie/échouée) :
 
@@ -1361,9 +1368,13 @@ router.post('/backup-codes', authenticateToken, async (req, res) => {
             appendAudit('auth.2fa.success', { userId: user.id, details: { method: 'backup_code' } });
             // → continuer vers l'émission des tokens (même code que TOTP valide)
         } else {
-            // ... vérification TOTP existante
+            // Conserver la vérification TOTP existante (bloc `speakeasy.totp.verify`
+            // actuellement à auth.js:~459). En cas d'échec, garder son `return 401`.
+            // En cas de succès, laisser le flux continuer vers l'émission des tokens.
         }
 ```
+
+**Implémentation concrète** : envelopper le bloc TOTP existant de `verify-login-a2f` dans le `else`. Ne pas dupliquer la logique d'émission de tokens : les deux branches (code de secours consommé OU TOTP valide) convergent vers le même `issueTokenPair` / `setAuthCookies` déjà en place plus bas dans le handler. Task 9 remplacera ensuite le `speakeasy.totp.verify` de ce `else` par `verifyTotp`.
 
 - [ ] **Step 4: Vérifier le succès**
 
@@ -1383,7 +1394,7 @@ git commit -m "feat(2fa): codes de secours hashés à usage unique"
 - Modify: `AkinatorWeb/backend/services/database.js` (colonne `a2f_last_step` sur `users`)
 - Modify: `AkinatorWeb/backend/services/twoFactor.js` (ajout `verifyTotp` avec garde anti-rejeu)
 - Modify: `AkinatorWeb/backend/middleware/security.js` (nouveau `a2fLimiter`)
-- Modify: `AkinatorWeb/backend/routes/auth.js` + `AkinatorWeb/backend/routes/a2f.js` (remplacer les 5 appels directs `speakeasy.totp.verify` par `verifyTotp`, appliquer `a2fLimiter`)
+- Modify: `AkinatorWeb/backend/routes/auth.js` + `AkinatorWeb/backend/routes/a2f.js` (remplacer les **6** appels directs `speakeasy.totp.verify` par `verifyTotp`, appliquer `a2fLimiter`)
 - Test: `AkinatorWeb/backend/tests/totp-replay.test.js`
 
 **Interfaces:**
@@ -2111,58 +2122,69 @@ const { app } = require('./helpers/setup');
 
 const USER = { username: 'avataruser', password: 'C0rrect!Horse#Battery9', rgpdConsent: true };
 
-async function authCookie() {
-    const res = await request(app).post('/api/auth/register').send(USER)
-        .then(r => r.status === 201 ? r : request(app).post('/api/auth/login')
-            .send({ username: USER.username, password: USER.password }));
-    return (res.headers['set-cookie'] || []).map(c => c.split(';')[0]).join('; ');
+/**
+ * /api/avatar est monté derrière `csrfProtection` (server.js:100) : il faut le
+ * cookie de session ET un token CSRF valide, sinon 403. On renvoie les deux.
+ */
+async function authContext() {
+    const reg = await request(app).post('/api/auth/register').send(USER);
+    const res = reg.status === 201 ? reg : await request(app).post('/api/auth/login')
+        .send({ username: USER.username, password: USER.password });
+    const cookie = (res.headers['set-cookie'] || []).map(c => c.split(';')[0]).join('; ');
+    const csrf = await request(app).get('/api/csrf-token').set('Cookie', cookie);
+    return { cookie, csrfToken: csrf.body.data.csrfToken };
 }
 
 test('un faux fichier image (contenu non décodable) est refusé', async () => {
-    const cookie = await authCookie();
+    const { cookie, csrfToken } = await authContext();
     const res = await request(app).post('/api/avatar/upload')
-        .set('Cookie', cookie)
+        .set('Cookie', cookie).set('X-CSRF-Token', csrfToken)
         .attach('avatar', Buffer.from('<?php system($_GET["c"]); ?>'), 'evil.jpg');
     assert.strictEqual(res.status, 400);
 });
 
 test('une image aux dimensions démesurées est refusée (anti compression-bomb)', async () => {
-    const cookie = await authCookie();
+    const { cookie, csrfToken } = await authContext();
     const bomb = await sharp({
         create: { width: 8000, height: 4000, channels: 3, background: { r: 0, g: 0, b: 0 } }
     }).jpeg({ quality: 10 }).toBuffer();
     const res = await request(app).post('/api/avatar/upload')
-        .set('Cookie', cookie)
+        .set('Cookie', cookie).set('X-CSRF-Token', csrfToken)
         .attach('avatar', bomb, 'bomb.jpg');
     assert.strictEqual(res.status, 400);
-    assert.match(res.body.error, /dimensions/i);
+    assert.match(res.body.error, /trop grande|dimensions/i);
 });
 ```
 
-Note : les tests avatar exigent le token CSRF si `csrfProtection` est monté sur `/api/avatar` — dans ce cas récupérer d'abord `GET /api/csrf-token` avec le cookie et ajouter `.set('X-CSRF-Token', token)` aux deux requêtes.
+Note : `/api/avatar` est **certainement** derrière `csrfProtection` (server.js:100) — le token CSRF est donc **obligatoire** (pas conditionnel) dans les deux tests, d'où le helper `authContext`.
 
-- [ ] **Step 2: Vérifier l'échec**
+- [ ] **Step 2: Vérifier l'état de départ (RED partiel)**
 
 Run: `npm test`
-Expected: le test « faux fichier » passe déjà (validation existante) ; le test « compression bomb » FAIL (l'image 8000×4000 est acceptée puis redimensionnée).
+
+État réel du code (à ne pas ignorer) : `validateImageBuffer` (`routes/avatar.js:64`) rejette **déjà** `metadata.width > 4096 || metadata.height > 4096` avec le message `'Image trop grande (max 4096x4096)'`. L'image de test 8000×4000 est donc déjà refusée par ce contrôle d'en-tête. Le RED attendu ici vient de **l'absence de token CSRF** dans un test naïf (403 ≠ 400) — d'où le helper `authContext` obligatoire.
+
+Conséquence honnête : la protection **par dimensions** préexiste ; les deux tests sont surtout des **garde-fous de non-régression**. La plus-value de code de cette tâche est `limitInputPixels`, qui durcit le **décodage/re-encodage** sharp contre les bombes de décompression (allocation mémoire au rastérisage), là où `metadata()` ne lit que l'en-tête. Aucune image acceptée par l'ancien contrôle (deux côtés ≤ 4096, donc ≤ 16,7 MP) ne peut dépasser `MAX_PIXELS` : il n'y a pas de red→green « pur » pour le seuil de pixels — c'est un durcissement défense-en-profondeur assumé, verrouillé par les tests de non-régression.
 
 - [ ] **Step 3: Implémenter**
 
-Dans `routes/avatar.js`, définir la limite et l'appliquer dans la fonction de validation existante (celle qui appelle `sharp(buffer).metadata()`) :
+Dans `routes/avatar.js`, définir la limite et l'appliquer à **toutes** les ouvertures sharp (validation ET re-encodage) — le contrôle de dimensions existant est conservé :
 
 ```js
 // Limite anti « compression bomb » : 16,7 MP max (4096×4096)
 const MAX_PIXELS = 4096 * 4096;
 ```
 
+Dans `validateImageBuffer`, ouvrir le buffer avec la borne de pixels (sharp lève alors une erreur au décodage d'une bombe, interceptée par le `catch` existant → 400 `'Fichier corrompu ou non-image'`) ; le contrôle par en-tête ligne 64 reste le premier rempart pour les images bien formées :
+
 ```js
         const metadata = await sharp(buffer, { limitInputPixels: MAX_PIXELS }).metadata();
-        if ((metadata.width || 0) * (metadata.height || 0) > MAX_PIXELS) {
-            return { valid: false, error: 'Image refusée : dimensions trop grandes (max 4096×4096)' };
-        }
+        // ... contrôles de format et de dimensions existants inchangés (dont le rejet > 4096×4096) ...
 ```
 
-et passer la même option au re-encodage : `sharp(req.file.buffer, { limitInputPixels: MAX_PIXELS })`.
+et passer la **même** option à l'appel de re-encodage WebP (`sharp(req.file.buffer, ...)`, plus bas dans le handler `/upload`) : `sharp(req.file.buffer, { limitInputPixels: MAX_PIXELS })`.
+
+Ne PAS remplacer le message `'Image trop grande (max 4096x4096)'` existant : le test l'accepte (`/trop grande|dimensions/i`).
 
 - [ ] **Step 4: Vérifier le succès**
 
