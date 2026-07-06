@@ -167,6 +167,21 @@ function initializeTables() {
         )
     `);
 
+    // Journal d'audit inviolable (append-only, chaînage de hash)
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_type TEXT NOT NULL,
+            user_id TEXT,
+            ip_hash TEXT,
+            details TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            prev_hash TEXT NOT NULL,
+            hash TEXT NOT NULL
+        )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_event ON audit_log(event_type)`);
+
     // Index pour optimisation et sécurité
     db.exec(`
         CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
