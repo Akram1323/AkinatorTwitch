@@ -1,0 +1,4 @@
+* text=auto eol=lf
+*.db binary
+*.db-shm binary
+*.db-wal binary
