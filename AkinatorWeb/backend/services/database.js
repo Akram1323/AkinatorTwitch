@@ -144,6 +144,29 @@ function initializeTables() {
         )
     `);
 
+    // Jetons de rafraîchissement (rotation + détection de réutilisation)
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS refresh_tokens (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            family_id TEXT NOT NULL,
+            token_hash TEXT UNIQUE NOT NULL,
+            expires_at DATETIME NOT NULL,
+            used_at DATETIME,
+            revoked INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    `);
+
+    // Blacklist persistante des access tokens révoqués (par jti)
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS revoked_tokens (
+            jti TEXT PRIMARY KEY,
+            expires_at DATETIME NOT NULL
+        )
+    `);
+
     // Index pour optimisation et sécurité
     db.exec(`
         CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
@@ -153,6 +176,8 @@ function initializeTables() {
         CREATE INDEX IF NOT EXISTS idx_tree_parent ON decision_tree(parent_id);
         CREATE INDEX IF NOT EXISTS idx_cache_expires ON igdb_cache(expires_at);
         CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+        CREATE INDEX IF NOT EXISTS idx_refresh_family ON refresh_tokens(family_id);
+        CREATE INDEX IF NOT EXISTS idx_refresh_user ON refresh_tokens(user_id);
     `);
 
     console.log('✅ Tables de base de données initialisées (schéma sécurisé)');
