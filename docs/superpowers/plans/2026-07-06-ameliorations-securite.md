@@ -857,17 +857,50 @@ Dans `services/database.js`, ajouter après `revoked_tokens` :
 
 ```js
 /**
- * Journal d'audit inviolable (tamper-evident).
- * Chaque entrée embarque hash_n = SHA256(payload_n || hash_n-1).
- * Toute modification/suppression a posteriori casse la chaîne,
- * détectable par verifyAuditChain() → non-répudiation / forensics.
+ * Journal d'audit tamper-evident à chaînage HMAC.
+ * Chaque entrée embarque hash_n = HMAC-SHA256(clé, payload_n || hash_n-1),
+ * la clé (AUDIT_HMAC_KEY) étant conservée HORS de la base. Un attaquant
+ * disposant d'un accès en écriture à la DB mais pas de la clé ne peut donc
+ * pas recalculer une chaîne valide après altération.
+ * Garanties réelles : détecte toute altération partielle, insertion ou
+ * suppression interne (verifyAuditChain). Limites : ne détecte PAS la
+ * troncature de queue (suppression des dernières lignes) sans ancrage externe.
  */
 const crypto = require('crypto');
+const config = require('../config/config');
 const { db } = require('./database');
+
+// Clé HMAC du journal d'audit (32 octets), attendue en hex (64 caractères), hors base.
+const AUDIT_HMAC_KEY = loadAuditKey();
+
+/**
+ * Charge AUDIT_HMAC_KEY depuis l'environnement.
+ * - Production : obligatoire, 64 hex → sinon arrêt (le journal ne serait pas protégé).
+ * - Dev/test : fallback dérivé de JWT_SECRET (avec avertissement), pour ne pas bloquer.
+ */
+function loadAuditKey() {
+    const raw = process.env.AUDIT_HMAC_KEY;
+    const isProd = process.env.NODE_ENV === 'production';
+    if (raw) {
+        if (!/^[0-9a-fA-F]{64}$/.test(raw)) {
+            console.error('❌ AUDIT_HMAC_KEY invalide : 64 caractères hexadécimaux attendus (32 octets).');
+            console.error('   Générer une clé : node scripts/generate-keys.js');
+            process.exit(1);
+        }
+        return Buffer.from(raw, 'hex');
+    }
+    if (isProd) {
+        console.error('❌ AUDIT_HMAC_KEY manquante en production : le journal d\'audit ne serait pas inviolable.');
+        console.error('   Générer une clé : node scripts/generate-keys.js');
+        process.exit(1);
+    }
+    console.warn('⚠️ AUDIT_HMAC_KEY absente : clé dérivée de JWT_SECRET (dev uniquement).');
+    return crypto.createHash('sha256').update(config.jwt.secret + 'audit_hmac_salt').digest();
+}
 
 function computeHash(eventType, userId, ipHash, detailsJson, createdAt, prevHash) {
     const payload = [eventType, userId || '', ipHash || '', detailsJson, createdAt].join('|');
-    return crypto.createHash('sha256').update(payload + prevHash).digest('hex');
+    return crypto.createHmac('sha256', AUDIT_HMAC_KEY).update(payload + prevHash).digest('hex');
 }
 
 /**
@@ -1973,6 +2006,7 @@ const crypto = require('crypto');
 console.log('# À copier dans .env (ou variables d\'environnement Render) :');
 console.log(`JWT_SECRET=${crypto.randomBytes(48).toString('hex')}`);
 console.log(`ENCRYPTION_KEY=${crypto.randomBytes(32).toString('hex')}`);
+console.log(`AUDIT_HMAC_KEY=${crypto.randomBytes(32).toString('hex')}`);
 console.log(`IP_HASH_SALT=${crypto.randomBytes(16).toString('hex')}`);
 ```
 
@@ -2055,7 +2089,7 @@ Dans `server.js`, `ensureAdminAccount()` — remplacer les lignes 201-202 :
 
 - [ ] **Step 5: Documentation**
 
-Compléter `env.example.txt` avec `ENCRYPTION_KEY=`, `IP_HASH_SALT=`, `ADMIN_USERNAME=`, `ADMIN_PASSWORD=` (valeurs vides + commentaire `# node scripts/generate-keys.js`).
+Compléter `env.example.txt` avec `ENCRYPTION_KEY=`, `AUDIT_HMAC_KEY=`, `IP_HASH_SALT=`, `ADMIN_USERNAME=`, `ADMIN_PASSWORD=` (valeurs vides + commentaire `# node scripts/generate-keys.js`).
 
 Créer `SECURITY.md` (racine) :
 
@@ -2067,9 +2101,11 @@ Contact : sirejambon@gmail.com — réponse sous 72 h. Merci de ne pas
 divulguer publiquement avant correction.
 
 ## Secrets et rotation
-- `JWT_SECRET` (sessions), `ENCRYPTION_KEY` (chiffrement AES-256-GCM des IP)
-  et `IP_HASH_SALT` (logs) sont trois secrets **indépendants** :
-  la compromission de l'un n'affecte pas les autres.
+- `JWT_SECRET` (sessions), `ENCRYPTION_KEY` (chiffrement AES-256-GCM des IP),
+  `AUDIT_HMAC_KEY` (intégrité du journal d'audit) et `IP_HASH_SALT` (logs)
+  sont quatre secrets **indépendants** : la compromission de l'un n'affecte
+  pas les autres. `AUDIT_HMAC_KEY` doit rester hors de portée d'un attaquant
+  ayant un accès à la base, sinon le journal n'est plus inviolable.
 - Génération : `node AkinatorWeb/backend/scripts/generate-keys.js`
 - Rotation de la clé de chiffrement (re-chiffre les données) :
   `OLD_ENCRYPTION_KEY=... ENCRYPTION_KEY=... node AkinatorWeb/backend/scripts/rotate-encryption-key.js`
