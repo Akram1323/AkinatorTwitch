@@ -22,7 +22,7 @@ var Game = {
             showLoading('Démarrage de la partie...');
             
             // Vérifier si connecté
-            if (!API.token) {
+            if (!currentUser) {
                 hideLoading();
                 showToast('Connectez-vous pour jouer', 'warning');
                 showLoginModal();

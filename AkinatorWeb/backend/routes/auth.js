@@ -122,7 +122,6 @@ router.post('/register',
             // Générer la paire de jetons (access court + refresh rotatif) et poser les cookies
             const { accessToken, refreshToken } = tokenService.issueTokenPair({ id: userId, username, is_admin: 0 });
             setAuthCookies(res, accessToken, refreshToken);
-            const token = accessToken; // compat transitoire : encore renvoyé dans le body, retiré en Task 4
 
             // Ne pas logger l'IP en clair (conformité RGPD)
             console.log(`✅ Nouvel utilisateur inscrit: ${username}`);
@@ -131,7 +130,6 @@ router.post('/register',
                 success: true,
                 message: 'Compte créé avec succès ! 3 jetons offerts !',
                 data: {
-                    token,
                     user: {
                         id: userId,
                         username,
@@ -254,7 +252,6 @@ router.post('/login',
             // Générer la paire de jetons (access court + refresh rotatif) et poser les cookies
             const { accessToken, refreshToken } = tokenService.issueTokenPair(user);
             setAuthCookies(res, accessToken, refreshToken);
-            const token = accessToken; // compat transitoire : encore renvoyé dans le body, retiré en Task 4
 
             // Vérifier si peut claim les jetons quotidiens
             let canClaimDaily = false;
@@ -272,7 +269,6 @@ router.post('/login',
             res.json({
                 success: true,
                 data: {
-                    token,
                     user: {
                         id: user.id,
                         username: user.username,
@@ -477,7 +473,6 @@ router.post('/verify-login-a2f',
             // Générer la paire de jetons (access court + refresh rotatif) et poser les cookies
             const { accessToken, refreshToken } = tokenService.issueTokenPair(user);
             setAuthCookies(res, accessToken, refreshToken);
-            const token = accessToken; // compat transitoire : encore renvoyé dans le body, retiré en Task 4
 
             let canClaimDaily = false;
             try {
@@ -493,7 +488,6 @@ router.post('/verify-login-a2f',
             res.json({
                 success: true,
                 data: {
-                    token,
                     user: {
                         id: user.id,
                         username: user.username,

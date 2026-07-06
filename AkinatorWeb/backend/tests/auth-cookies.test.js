@@ -45,6 +45,13 @@ test('POST /api/auth/refresh fait tourner le refresh token', async () => {
     assert.strictEqual(r3.status, 401, 'toute la famille est révoquée');
 });
 
+test('le body de login ne contient plus de token (cookies uniquement)', async () => {
+    const res = await request(app).post('/api/auth/login')
+        .send({ username: USER.username, password: USER.password });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.data.token, undefined);
+});
+
 test('logout révoque l\'access token (blacklist persistante)', async () => {
     const login = await request(app).post('/api/auth/login')
         .send({ username: USER.username, password: USER.password });
