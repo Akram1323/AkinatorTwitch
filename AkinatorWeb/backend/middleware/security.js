@@ -142,7 +142,16 @@ const optionalAuth = (req, res, next) => {
 
     if (token) {
         try {
-            req.user = jwt.verify(token, config.jwt.secret);
+            const decoded = jwt.verify(token, config.jwt.secret, {
+                algorithms: [config.jwt.algorithm]
+            });
+
+            // Blacklist persistante (révocation au logout) : un token révoqué
+            // ne doit pas être honoré, mais optionalAuth ne bloque jamais la requête.
+            const { isJtiRevoked } = require('../services/tokenService');
+            if (!isJtiRevoked(decoded.jti)) {
+                req.user = decoded;
+            }
         } catch (err) {
             // Token invalide, on continue sans user
         }
