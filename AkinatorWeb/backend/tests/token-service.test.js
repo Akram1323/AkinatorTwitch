@@ -38,4 +38,6 @@ test('jti révoqué est détecté', () => {
     assert.strictEqual(tokenService.isJtiRevoked(decoded.jti), false);
     tokenService.revokeAccessToken(decoded);
     assert.strictEqual(tokenService.isJtiRevoked(decoded.jti), true);
+    const row = db.prepare('SELECT expires_at FROM revoked_tokens WHERE jti = ?').get(decoded.jti);
+    assert.ok(!/T/.test(row.expires_at), 'expires_at au format SQLite, pas ISO');
 });

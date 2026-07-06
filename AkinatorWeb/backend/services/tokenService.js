@@ -79,9 +79,8 @@ function rotateRefreshToken(presentedToken) {
 
 function revokeAccessToken(decodedPayload) {
     if (!decodedPayload || !decodedPayload.jti) return;
-    const expiresAt = new Date((decodedPayload.exp || 0) * 1000).toISOString();
-    db.prepare('INSERT OR IGNORE INTO revoked_tokens (jti, expires_at) VALUES (?, ?)')
-        .run(decodedPayload.jti, expiresAt);
+    db.prepare("INSERT OR IGNORE INTO revoked_tokens (jti, expires_at) VALUES (?, datetime(?, 'unixepoch'))")
+        .run(decodedPayload.jti, decodedPayload.exp || 0);
 }
 
 function isJtiRevoked(jti) {
