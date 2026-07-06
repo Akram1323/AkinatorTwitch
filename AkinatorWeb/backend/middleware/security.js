@@ -90,8 +90,10 @@ const paymentLimiter = rateLimit({
  * Middleware d'authentification JWT
  */
 const authenticateToken = (req, res, next) => {
+    // Priorité au cookie httpOnly ; header Authorization conservé en compat
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+    const token = (req.cookies && req.cookies.access_token)
+        || (authHeader && authHeader.split(' ')[1]);
 
     if (!token) {
         return res.status(401).json({
@@ -100,21 +102,20 @@ const authenticateToken = (req, res, next) => {
         });
     }
 
-    // Vérifier si le token est révoqué (blacklist)
     try {
-        const { tokenBlacklist } = require('../routes/auth');
-        if (tokenBlacklist && tokenBlacklist.has(token)) {
+        const decoded = jwt.verify(token, config.jwt.secret, {
+            algorithms: [config.jwt.algorithm]
+        });
+
+        // Blacklist persistante (révocation au logout)
+        const { isJtiRevoked } = require('../services/tokenService');
+        if (isJtiRevoked(decoded.jti)) {
             return res.status(401).json({
                 success: false,
                 error: 'Token révoqué, veuillez vous reconnecter'
             });
         }
-    } catch (e) { /* module pas encore chargé, on continue */ }
 
-    try {
-        const decoded = jwt.verify(token, config.jwt.secret, {
-            algorithms: [config.jwt.algorithm]
-        });
         req.user = decoded;
         next();
     } catch (err) {
@@ -136,7 +137,8 @@ const authenticateToken = (req, res, next) => {
  */
 const optionalAuth = (req, res, next) => {
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
+    const token = (req.cookies && req.cookies.access_token)
+        || (authHeader && authHeader.split(' ')[1]);
 
     if (token) {
         try {

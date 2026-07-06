@@ -22,24 +22,28 @@ const config = require('../config/config');
 const { queries } = require('../services/database');
 const { authLimiter, registerLimiter, authenticateToken } = require('../middleware/security');
 const { encryptIP } = require('../services/encryption');
+const tokenService = require('../services/tokenService');
 
 const router = express.Router();
 
-// JWT blacklist en mémoire (tokens révoqués)
-const tokenBlacklist = new Set();
-
-// Nettoyage périodique des tokens expirés du blacklist (toutes les heures)
-setInterval(() => {
-    tokenBlacklist.forEach(token => {
-        try {
-            jwt.verify(token, config.jwt.secret);
-        } catch (e) {
-            if (e.name === 'TokenExpiredError') tokenBlacklist.delete(token);
-        }
+/** Pose les cookies d'authentification httpOnly */
+function setAuthCookies(res, accessToken, refreshToken) {
+    const secure = process.env.NODE_ENV === 'production';
+    res.cookie('access_token', accessToken, {
+        httpOnly: true, secure, sameSite: 'strict',
+        maxAge: 15 * 60 * 1000, path: '/'
     });
-}, 3600 * 1000);
+    res.cookie('refresh_token', refreshToken, {
+        httpOnly: true, secure, sameSite: 'strict',
+        maxAge: tokenService.REFRESH_TTL_DAYS * 24 * 3600 * 1000,
+        path: '/api/auth' // envoyé uniquement à /api/auth/refresh et /api/auth/logout
+    });
+}
 
-// tokenBlacklist sera exporté avec le router à la fin du fichier
+function clearAuthCookies(res) {
+    res.clearCookie('access_token', { path: '/' });
+    res.clearCookie('refresh_token', { path: '/api/auth' });
+}
 
 // Constantes de sécurité
 const BCRYPT_ROUNDS = 12;
@@ -115,12 +119,10 @@ router.post('/register',
             // Enregistrer la transaction de jetons offerts
             queries.transactions.create.run(uuidv4(), userId, 'gift', 3, null, 'completed');
 
-            // Générer le token JWT
-            const token = jwt.sign(
-                { id: userId, username },
-                config.jwt.secret,
-                { expiresIn: config.jwt.expiresIn, algorithm: config.jwt.algorithm }
-            );
+            // Générer la paire de jetons (access court + refresh rotatif) et poser les cookies
+            const { accessToken, refreshToken } = tokenService.issueTokenPair({ id: userId, username, is_admin: 0 });
+            setAuthCookies(res, accessToken, refreshToken);
+            const token = accessToken; // compat transitoire : encore renvoyé dans le body, retiré en Task 4
 
             // Ne pas logger l'IP en clair (conformité RGPD)
             console.log(`✅ Nouvel utilisateur inscrit: ${username}`);
@@ -249,12 +251,10 @@ router.post('/login',
                     .run(uuidv4(), user.id, encryptedIP || null, req.headers['user-agent'] || null);
             } catch (e) { /* non bloquant */ }
 
-            // Générer le token
-            const token = jwt.sign(
-                { id: user.id, username: user.username, is_admin: user.is_admin === 1 },
-                config.jwt.secret,
-                { expiresIn: config.jwt.expiresIn, algorithm: config.jwt.algorithm }
-            );
+            // Générer la paire de jetons (access court + refresh rotatif) et poser les cookies
+            const { accessToken, refreshToken } = tokenService.issueTokenPair(user);
+            setAuthCookies(res, accessToken, refreshToken);
+            const token = accessToken; // compat transitoire : encore renvoyé dans le body, retiré en Task 4
 
             // Vérifier si peut claim les jetons quotidiens
             let canClaimDaily = false;
@@ -474,11 +474,10 @@ router.post('/verify-login-a2f',
             // encryptedIP peut être null si l'IP n'a pas pu être chiffrée, c'est acceptable
             queries.users.updateLastLogin.run(encryptedIP || null, user.id);
 
-            const token = jwt.sign(
-                { id: user.id, username: user.username, is_admin: user.is_admin === 1 },
-                config.jwt.secret,
-                { expiresIn: config.jwt.expiresIn, algorithm: config.jwt.algorithm }
-            );
+            // Générer la paire de jetons (access court + refresh rotatif) et poser les cookies
+            const { accessToken, refreshToken } = tokenService.issueTokenPair(user);
+            setAuthCookies(res, accessToken, refreshToken);
+            const token = accessToken; // compat transitoire : encore renvoyé dans le body, retiré en Task 4
 
             let canClaimDaily = false;
             try {
@@ -764,17 +763,50 @@ router.post('/forgot-password',
 
 /**
  * POST /api/auth/logout
- * Révoque le token JWT (blacklist)
+ * Révoque le token JWT (blacklist persistante) et la famille de refresh tokens
  */
 router.post('/logout', authenticateToken, (req, res) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-    if (token) {
-        tokenBlacklist.add(token);
-        console.log(`👋 Déconnexion: ${req.user.username}`);
+    // Révoquer l'access token courant (blacklist persistante par jti)
+    tokenService.revokeAccessToken(req.user);
+    // Révoquer la famille de refresh tokens si le cookie est présent
+    if (req.cookies && req.cookies.refresh_token) {
+        tokenService.revokeFamilyByToken(req.cookies.refresh_token);
     }
-    res.json({ success: true, message: 'Déconnecté avec succès' });
+    clearAuthCookies(res);
+    console.log(`👋 Déconnexion: ${req.user.username}`);
+    res.json({ success: true, message: 'Déconnexion réussie' });
+});
+
+/**
+ * POST /api/auth/refresh
+ * Rotation du refresh token (cookie httpOnly). Pas d'access token requis.
+ */
+router.post('/refresh', (req, res) => {
+    const presented = req.cookies && req.cookies.refresh_token;
+    if (!presented) {
+        return res.status(401).json({ success: false, error: 'Session absente, veuillez vous reconnecter' });
+    }
+
+    const result = tokenService.rotateRefreshToken(presented);
+    if (!result.ok) {
+        clearAuthCookies(res);
+        const error = result.reason === 'reuse'
+            ? 'Réutilisation de jeton détectée, session révoquée par sécurité'
+            : 'Session expirée, veuillez vous reconnecter';
+        if (result.reason === 'reuse') {
+            console.warn('⚠️ SECURITY: réutilisation de refresh token détectée');
+        }
+        return res.status(401).json({ success: false, error });
+    }
+
+    const user = queries.users.findById.get(result.userId);
+    if (!user) {
+        clearAuthCookies(res);
+        return res.status(401).json({ success: false, error: 'Utilisateur introuvable' });
+    }
+
+    setAuthCookies(res, tokenService.signAccessToken(user), result.newToken);
+    res.json({ success: true });
 });
 
 module.exports = router;
-module.exports.tokenBlacklist = tokenBlacklist;

@@ -60,6 +60,10 @@ app.use(express.json({
     }
 }));
 
+// Cookies httpOnly (access/refresh tokens)
+const cookieParser = require('cookie-parser');
+app.use(cookieParser());
+
 // Rate limiting global
 app.use(globalLimiter);
 
