@@ -18,7 +18,8 @@ const {
     helmetConfig,
     globalLimiter,
     sanitizeInput,
-    securityLogger
+    securityLogger,
+    extraHeaders
 } = require('./middleware/security');
 
 // Base de données
@@ -48,6 +49,9 @@ app.set('trust proxy', 1);
 
 // Sécurité (Helmet)
 app.use(helmetConfig);
+
+// En-têtes additionnels (Permissions-Policy, Reporting-Endpoints)
+app.use(extraHeaders);
 
 // CORS
 app.use(cors(config.cors));
@@ -87,6 +91,27 @@ app.use(express.static(path.join(__dirname, '../frontend')));
 const { getCSRFToken, csrfProtection } = require('./middleware/csrf');
 const { authenticateToken } = require('./middleware/security');
 app.get('/api/csrf-token', authenticateToken, getCSRFToken);
+
+// Rapport de violations CSP : reçu directement du navigateur, sans token CSRF
+// (doit être avant les routers protégés par csrfProtection)
+app.post('/api/csp-report',
+    express.json({ type: ['application/json', 'application/csp-report', 'application/reports+json'] }),
+    (req, res) => {
+        const { appendAudit } = require('./services/auditService');
+        appendAudit('csp.violation', { details: req.body || {} });
+        console.warn('⚠️ SECURITY: violation CSP signalée', JSON.stringify(req.body).slice(0, 300));
+        res.status(204).end();
+    });
+
+// Sécurité RFC 9116 : politique de divulgation des vulnérabilités
+app.get('/.well-known/security.txt', (req, res) => {
+    res.type('text/plain').send([
+        'Contact: mailto:sirejambon@gmail.com',
+        'Expires: 2027-07-06T00:00:00.000Z',
+        'Preferred-Languages: fr, en',
+        'Canonical: https://akinator-twitch.onrender.com/.well-known/security.txt'
+    ].join('\n') + '\n');
+});
 
 // Routes API
 // Note: CSRF désactivé temporairement pour les routes auth (login/register)

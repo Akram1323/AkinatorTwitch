@@ -25,7 +25,9 @@ const helmetConfig = helmet({
             styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdnjs.cloudflare.com"],
             fontSrc: ["'self'", "https://fonts.gstatic.com", "https://cdnjs.cloudflare.com"],
             imgSrc: ["'self'", "data:", "https://images.igdb.com", "https:"],
-            connectSrc: ["'self'", "https://api.igdb.com", "https://polygon-rpc.com", "https://polygon-mainnet.g.alchemy.com"]
+            connectSrc: ["'self'", "https://api.igdb.com", "https://polygon-rpc.com", "https://polygon-mainnet.g.alchemy.com"],
+            'report-uri': ['/api/csp-report'],
+            'report-to': ['csp-endpoint']
         }
     },
     crossOriginEmbedderPolicy: false,
@@ -301,6 +303,17 @@ const securityLogger = (req, res, next) => {
     next();
 };
 
+/**
+ * En-têtes de sécurité additionnels (non couverts par Helmet)
+ * Permissions-Policy : désactive les APIs sensibles non utilisées
+ * Reporting-Endpoints : point de collecte des violations CSP (report-to)
+ */
+const extraHeaders = (req, res, next) => {
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+    res.setHeader('Reporting-Endpoints', 'csp-endpoint="/api/csp-report"');
+    next();
+};
+
 module.exports = {
     helmetConfig,
     globalLimiter,
@@ -312,5 +325,6 @@ module.exports = {
     optionalAuth,
     requireAdmin,
     sanitizeInput,
-    securityLogger
+    securityLogger,
+    extraHeaders
 };
