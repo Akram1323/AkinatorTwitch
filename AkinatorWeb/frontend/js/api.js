@@ -9,6 +9,11 @@
 const API = {
     baseUrl: '/api',
     csrfToken: null,
+    // Refresh en vol partagé : évite que plusieurs requêtes en 401
+    // simultanées déclenchent chacune un /auth/refresh (le refresh token
+    // tourne à chaque appel ; un 2e appel avec le même cookie serait
+    // détecté comme réutilisation et révoquerait toute la famille).
+    refreshPromise: null,
 
     /**
      * Appelé après un login/register/verify-a2f réussi : la session vit
@@ -33,6 +38,32 @@ const API = {
             }
         } catch (error) { /* pas de session active */ }
         return null;
+    },
+
+    /**
+     * Rafraîchit la session (access token) via le refresh token httpOnly.
+     * Single-flight : si un refresh est déjà en cours, on réutilise la
+     * même promesse au lieu de déclencher un second appel réseau, sinon
+     * le refresh token (à usage unique, rotatif) serait détecté comme
+     * réutilisé et la famille entière de tokens serait révoquée.
+     * Retourne true si le refresh a réussi, false sinon.
+     */
+    async refreshSession() {
+        if (this.refreshPromise) {
+            return this.refreshPromise;
+        }
+
+        this.refreshPromise = fetch(`${this.baseUrl}/auth/refresh`, {
+            method: 'POST',
+            credentials: 'same-origin'
+        })
+            .then(response => response.ok)
+            .catch(() => false)
+            .finally(() => {
+                this.refreshPromise = null;
+            });
+
+        return this.refreshPromise;
     },
 
     /**
@@ -72,13 +103,13 @@ const API = {
                 credentials: 'same-origin' // cookies httpOnly
             });
 
-            // Access token expiré → tenter un refresh silencieux puis rejouer une fois
+            // Access token expiré → tenter un refresh silencieux puis rejouer une fois.
+            // Le refresh est mutualisé (single-flight) : plusieurs requêtes en 401
+            // en même temps attendent toutes le même appel /auth/refresh au lieu
+            // d'en déclencher chacune un, ce qui casserait la rotation des tokens.
             if (response.status === 401 && !isRetry && endpoint !== '/auth/refresh' && endpoint !== '/auth/login') {
-                const refreshed = await fetch(`${this.baseUrl}/auth/refresh`, {
-                    method: 'POST',
-                    credentials: 'same-origin'
-                });
-                if (refreshed.ok) {
+                const refreshed = await this.refreshSession();
+                if (refreshed) {
                     return this.request(endpoint, options, true);
                 }
             }
