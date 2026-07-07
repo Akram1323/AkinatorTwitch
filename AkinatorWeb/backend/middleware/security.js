@@ -261,6 +261,8 @@ const requireAdmin = async (req, res, next) => {
  * Validation et sanitization des entrées
  */
 const sanitizeInput = (req, res, next) => {
+    const SENSITIVE_KEYS = new Set(['password', 'currentPassword', 'newPassword', 'code', 'a2fCode']);
+
     // Nettoyer les paramètres de requête
     const sanitize = (obj) => {
         if (typeof obj === 'string') {
@@ -274,6 +276,7 @@ const sanitizeInput = (req, res, next) => {
         }
         if (typeof obj === 'object' && obj !== null) {
             for (const key in obj) {
+                if (SENSITIVE_KEYS.has(key)) continue; // ne pas altérer les secrets
                 obj[key] = sanitize(obj[key]);
             }
         }
