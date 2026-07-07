@@ -75,6 +75,18 @@ const registerLimiter = rateLimit({
 });
 
 /**
+ * Rate Limiter dédié à la vérification 2FA (anti brute-force sur 6 chiffres)
+ */
+const a2fLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: config.isTest ? 10000 : 5,
+    message: {
+        success: false,
+        error: 'Trop de tentatives de vérification 2FA, réessayez dans 15 minutes'
+    }
+});
+
+/**
  * Rate Limiter pour les paiements crypto
  */
 const paymentLimiter = rateLimit({
@@ -271,6 +283,7 @@ module.exports = {
     globalLimiter,
     authLimiter,
     registerLimiter,
+    a2fLimiter,
     paymentLimiter,
     authenticateToken,
     optionalAuth,

@@ -5,9 +5,11 @@
  */
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
+const speakeasy = require('speakeasy');
 const { db } = require('./database');
 
 const BACKUP_CODES_COUNT = 8;
+const TOTP_WINDOW = 1; // ±30 s de tolérance
 
 function sha256(text) {
     return crypto.createHash('sha256').update(text).digest('hex');
@@ -36,4 +38,30 @@ function consumeBackupCode(userId, code) {
     return true;
 }
 
-module.exports = { generateBackupCodes, consumeBackupCode, BACKUP_CODES_COUNT };
+function currentStep() {
+    return Math.floor(Date.now() / 1000 / 30);
+}
+
+/**
+ * Vérifie un code TOTP avec garde anti-rejeu :
+ * le step consommé est mémorisé, tout code d'un step <= dernier utilisé est refusé.
+ */
+function verifyTotp(user, code) {
+    const delta = speakeasy.totp.verifyDelta({
+        secret: user.a2f_secret,
+        encoding: 'base32',
+        token: String(code || '').trim(),
+        window: TOTP_WINDOW
+    });
+    if (!delta) return { ok: false, error: 'Code A2F incorrect' };
+
+    const step = currentStep() + delta.delta;
+    if (user.a2f_last_step !== null && user.a2f_last_step !== undefined
+        && step <= user.a2f_last_step) {
+        return { ok: false, error: 'Code A2F déjà utilisé, attendez le prochain code' };
+    }
+    db.prepare('UPDATE users SET a2f_last_step = ? WHERE id = ?').run(step, user.id);
+    return { ok: true };
+}
+
+module.exports = { generateBackupCodes, consumeBackupCode, BACKUP_CODES_COUNT, verifyTotp };

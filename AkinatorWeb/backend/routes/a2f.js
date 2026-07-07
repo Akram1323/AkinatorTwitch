@@ -5,12 +5,12 @@
 
 const express = require('express');
 const router = express.Router();
-const { authenticateToken } = require('../middleware/security');
+const { authenticateToken, a2fLimiter } = require('../middleware/security');
 const speakeasy = require('speakeasy');
 const QRCode = require('qrcode');
 const { db, queries } = require('../services/database');
 const { appendAudit } = require('../services/auditService');
-const { generateBackupCodes } = require('../services/twoFactor');
+const { generateBackupCodes, verifyTotp } = require('../services/twoFactor');
 
 /**
  * POST /api/a2f/setup
@@ -77,7 +77,7 @@ router.post('/setup', authenticateToken, async (req, res) => {
  * POST /api/a2f/verify-setup
  * Vérifie le code A2F et active l'A2F
  */
-router.post('/verify-setup', authenticateToken, async (req, res) => {
+router.post('/verify-setup', a2fLimiter, authenticateToken, async (req, res) => {
     try {
         const { code } = req.body;
 
@@ -90,16 +90,12 @@ router.post('/verify-setup', authenticateToken, async (req, res) => {
             return res.status(400).json({ success: false, error: 'Aucun secret A2F configuré' });
         }
 
-        // Vérifier le code avec speakeasy
-        const isValid = speakeasy.totp.verify({
-            secret: user.a2f_secret,
-            encoding: 'base32',
-            token: code,
-            window: 1
-        });
-
-        if (!isValid) {
-            return res.status(401).json({ success: false, error: 'Code incorrect' });
+        // Vérifier le code (garde anti-rejeu incluse). Le secret utilisé ici est
+        // celui déjà persisté en DB par /setup (a2f_secret lu à l'instant sur `user`),
+        // donc user.a2f_secret est bien la valeur en cours de configuration.
+        const totpResult = verifyTotp(user, code);
+        if (!totpResult.ok) {
+            return res.status(401).json({ success: false, error: totpResult.error });
         }
 
         // Activer l'A2F
@@ -128,7 +124,7 @@ router.post('/verify-setup', authenticateToken, async (req, res) => {
  * Vérifie un code A2F (pour la connexion)
  * SÉCURISÉ : Utilise req.user.id du token JWT pour éviter IDOR
  */
-router.post('/verify', authenticateToken, async (req, res) => {
+router.post('/verify', a2fLimiter, authenticateToken, async (req, res) => {
     try {
         const { code } = req.body;
 
@@ -142,15 +138,9 @@ router.post('/verify', authenticateToken, async (req, res) => {
             return res.status(400).json({ success: false, error: 'A2F non configuré' });
         }
 
-        const isValid = speakeasy.totp.verify({
-            secret: user.a2f_secret,
-            encoding: 'base32',
-            token: code,
-            window: 1
-        });
-
-        if (!isValid) {
-            return res.status(401).json({ success: false, error: 'Code A2F incorrect' });
+        const totpResult = verifyTotp(user, code);
+        if (!totpResult.ok) {
+            return res.status(401).json({ success: false, error: totpResult.error });
         }
 
         res.json({ success: true });
@@ -183,15 +173,9 @@ router.post('/disable', authenticateToken, async (req, res) => {
 
         // Vérifier le code A2F actuel
         if (user.a2f_enabled && user.a2f_secret) {
-            const isValid = speakeasy.totp.verify({
-                secret: user.a2f_secret,
-                encoding: 'base32',
-                token: code,
-                window: 1
-            });
-
-            if (!isValid) {
-                return res.status(401).json({ success: false, error: 'Code A2F incorrect' });
+            const totpResult = verifyTotp(user, code);
+            if (!totpResult.ok) {
+                return res.status(401).json({ success: false, error: totpResult.error });
             }
         }
 

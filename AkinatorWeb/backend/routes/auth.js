@@ -20,7 +20,7 @@ const { body, validationResult } = require('express-validator');
 
 const config = require('../config/config');
 const { queries } = require('../services/database');
-const { authLimiter, registerLimiter, authenticateToken } = require('../middleware/security');
+const { authLimiter, registerLimiter, a2fLimiter, authenticateToken } = require('../middleware/security');
 const { encryptIP, hashIPForLogging } = require('../services/encryption');
 const tokenService = require('../services/tokenService');
 const { appendAudit } = require('../services/auditService');
@@ -412,6 +412,7 @@ router.post('/claim-daily', authenticateToken, (req, res) => {
  * SÉCURISÉ : Utilise le token temporaire pour éviter IDOR
  */
 router.post('/verify-login-a2f',
+    a2fLimiter,
     authLimiter,
     [
         // Accepte un TOTP (6 chiffres) ou un code de secours (10 caractères hex)
@@ -482,20 +483,14 @@ router.post('/verify-login-a2f',
                 // → continue vers l'émission des tokens (même code que TOTP valide,
                 //   l'audit de succès unique plus bas couvre les deux méthodes)
             } else {
-                // Vérifier le code TOTP
-                const speakeasy = require('speakeasy');
-                const isValid = speakeasy.totp.verify({
-                    secret: user.a2f_secret,
-                    encoding: 'base32',
-                    token: code,
-                    window: 1
-                });
-
-                if (!isValid) {
-                    appendAudit('auth.2fa.failed', { userId: decoded.id, ipHash: hashIPForLogging(rawIP) });
+                // Vérifier le code TOTP (garde anti-rejeu incluse)
+                const { verifyTotp } = require('../services/twoFactor');
+                const totpResult = verifyTotp(user, code);
+                if (!totpResult.ok) {
+                    appendAudit('auth.2fa.failed', { userId: decoded.id, ipHash: hashIPForLogging(rawIP), details: { method: 'totp' } });
                     return res.status(401).json({
                         success: false,
-                        error: 'Code A2F incorrect'
+                        error: totpResult.error
                     });
                 }
             }
@@ -665,17 +660,12 @@ router.post('/change-password',
                         requiresA2F: true
                     });
                 }
-                const speakeasy = require('speakeasy');
-                const valid = speakeasy.totp.verify({
-                    secret: user.a2f_secret,
-                    encoding: 'base32',
-                    token: a2fCode,
-                    window: 1
-                });
-                if (!valid) {
+                const { verifyTotp } = require('../services/twoFactor');
+                const totpResult = verifyTotp(user, a2fCode);
+                if (!totpResult.ok) {
                     return res.status(401).json({
                         success: false,
-                        error: 'Code A2F incorrect'
+                        error: totpResult.error
                     });
                 }
             }
@@ -761,18 +751,12 @@ router.post('/forgot-password',
             }
 
             // Vérifier le code A2F
-            const speakeasy = require('speakeasy');
-            const valid = speakeasy.totp.verify({
-                secret: user.a2f_secret,
-                encoding: 'base32',
-                token: a2fCode,
-                window: 1
-            });
-
-            if (!valid) {
+            const { verifyTotp } = require('../services/twoFactor');
+            const totpResult = verifyTotp(user, a2fCode);
+            if (!totpResult.ok) {
                 return res.status(401).json({
                     success: false,
-                    error: 'Code A2F incorrect'
+                    error: totpResult.error
                 });
             }
 
