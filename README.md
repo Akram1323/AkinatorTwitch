@@ -153,7 +153,7 @@ La sécurité est au cœur du projet. Mesures implémentées :
 
 | Mesure | Détail |
 |--------|--------|
-| **JWT** | Authentification par token signé (HS256, expiration 24 h) |
+| **JWT** | Access token court (HS256, 15 min) + refresh token rotatif httpOnly (7 j) avec détection de réutilisation |
 | **Bcrypt** | Hash des mots de passe (12 rounds) |
 | **2FA (TOTP)** | Second facteur optionnel via `speakeasy` |
 | **Helmet** | En-têtes HTTP de sécurité |

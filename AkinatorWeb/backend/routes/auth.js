@@ -257,7 +257,8 @@ router.post('/login',
             // encryptedIP peut être null si l'IP n'a pas pu être chiffrée, c'est acceptable
             queries.users.updateLastLogin.run(encryptedIP || null, user.id);
 
-            // Logger la session (audit trail)
+            // Enregistrement d'audit de session (indépendant des tokens JWT :
+            // sert au journal de connexions, pas à la validité de l'access token).
             try {
                 const { db } = require('../services/database');
                 db.prepare(`INSERT INTO sessions (id, user_id, ip_address, user_agent, expires_at)
