@@ -100,24 +100,26 @@ router.post('/register',
             // Chiffrer l'IP pour conformité RGPD
             const encryptedIP = encryptIP(rawIP);
 
-            // Vérifier si l'utilisateur existe
-            const existingUser = queries.users.findByUsername.get(username);
-            
-            if (existingUser) {
-                return res.status(409).json({
-                    success: false,
-                    error: 'Cet identifiant est déjà utilisé'
-                });
-            }
-
             // Vérifier la robustesse et la non-compromission du mot de passe
             const passwordCheck = await validateNewPassword(password, username);
             if (!passwordCheck.ok) {
                 return res.status(400).json({ success: false, error: passwordCheck.error });
             }
 
-            // Hash du mot de passe avec bcrypt (12 rounds = sécurisé)
+            // Hash calculé AVANT le test d'existence : temps de réponse constant
+            // que l'identifiant soit pris ou non (anti-énumération par timing)
             const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+
+            // Vérifier si l'utilisateur existe
+            const existingUser = queries.users.findByUsername.get(username);
+
+            if (existingUser) {
+                // Message volontairement générique : ne pas confirmer l'existence du compte
+                return res.status(400).json({
+                    success: false,
+                    error: 'Inscription impossible. Vérifiez vos informations et réessayez.'
+                });
+            }
 
             // Créer l'utilisateur avec 3 jetons de départ
             const userId = uuidv4();
