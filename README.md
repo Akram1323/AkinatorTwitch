@@ -94,6 +94,11 @@ AkinatorWeb/
 └── .node-version               # 20.11.0
 ```
 
+> 📚 **Documentation technique détaillée** dans [`docs/`](./docs/) :
+> [architecture](./docs/architecture.md) (carte du code, pipeline, schéma),
+> [authentification](./docs/authentification.md) (tokens & sessions),
+> [sécurité](./docs/securite.md) (défense en profondeur).
+
 ## 🚀 Installation
 
 ### 1. Prérequis
@@ -167,7 +172,9 @@ La sécurité est au cœur du projet. Mesures implémentées :
 | **CORS** | Origines contrôlées (fermé par défaut en production) |
 | **Logs** | Journalisation sans données sensibles |
 
-> Voir aussi [`ameliorations-secu.md`](./ameliorations-secu.md) pour les pistes d'amélioration.
+> 📚 Détail complet dans [`docs/securite.md`](./docs/securite.md) (posture / défense en
+> profondeur) et [`docs/authentification.md`](./docs/authentification.md) (modèle de
+> tokens et sessions). Politique de signalement : [`SECURITY.md`](./SECURITY.md).
 
 ## 📡 API
 
@@ -184,7 +191,8 @@ Base : `/api`. 🔒 = authentification requise (JWT), 👑 = réservé aux admin
 | POST | `/change-password` 🔒 | Changer le mot de passe |
 | POST | `/forgot-password` | Réinitialisation du mot de passe |
 | POST | `/link-wallet` 🔒 | Lier un wallet crypto |
-| POST | `/logout` 🔒 | Déconnexion |
+| POST | `/logout` 🔒 | Déconnexion (révoque access + refresh) |
+| POST | `/refresh` | Rotation du refresh token → nouvelle paire de tokens |
 
 ### Jeu — `/api/game`
 | Méthode | Route | Description |
