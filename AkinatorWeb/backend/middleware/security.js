@@ -144,6 +144,13 @@ const authenticateToken = (req, res, next) => {
             algorithms: [config.jwt.algorithm]
         });
 
+        if (decoded.pending2FA) {
+            return res.status(401).json({
+                success: false,
+                error: 'Vérification 2FA requise'
+            });
+        }
+
         // Blacklist persistante (révocation au logout)
         const { isJtiRevoked } = require('../services/tokenService');
         if (isJtiRevoked(decoded.jti)) {
@@ -182,6 +189,10 @@ const optionalAuth = (req, res, next) => {
             const decoded = jwt.verify(token, config.jwt.secret, {
                 algorithms: [config.jwt.algorithm]
             });
+
+            if (decoded.pending2FA) {
+                return next();
+            }
 
             // Blacklist persistante (révocation au logout) : un token révoqué
             // ne doit pas être honoré, mais optionalAuth ne bloque jamais la requête.
