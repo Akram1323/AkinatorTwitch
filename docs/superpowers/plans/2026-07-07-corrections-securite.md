@@ -232,6 +232,10 @@ Dans `AkinatorWeb/backend/middleware/security.js`, dans `authenticateToken`, apr
 ```javascript
         // Invalidation globale au changement de mot de passe : tout access token
         // émis avant `password_changed_at` (secondes Unix) n'est plus honoré.
+        // NB : granularité 1 s (iat en secondes) → un token émis dans la même
+        // seconde que le changement survit (`<` strict). Compromis assumé qui
+        // préserve la session courante ré-émise ; fenêtre ≤ 1 s vs TTL 15 min.
+        // NB : ce findById ajoute un SELECT (PK indexée) par requête authentifiée.
         const account = queries.users.findById.get(decoded.id);
         if (!account) {
             return res.status(401).json({ success: false, error: 'Session invalide, veuillez vous reconnecter' });
@@ -260,7 +264,7 @@ Dans `optionalAuth`, dans le bloc `if (!isJtiRevoked(decoded.jti)) { req.user = 
 
 - [ ] **Step 7 : Câbler `/change-password` (invalidation + ré-émission)**
 
-Dans `AkinatorWeb/backend/routes/auth.js`, dans le handler `/change-password`, remplacer le bloc de mise à jour du hash (`UPDATE users SET password_hash = ? WHERE id = ?`) par une mise à jour combinée + révocation + ré-émission. Concrètement, après le calcul de `newPasswordHash` :
+Dans `AkinatorWeb/backend/routes/auth.js`, dans le handler `/change-password`, **remplacer intégralement** le bloc allant de `const updateStmt = require('../services/database').db.prepare(...)` (la mise à jour du hash) jusqu'au `res.json({ success: true, message: 'Mot de passe mis à jour avec succès' })` inclus — c.-à-d. l'ancien `updateStmt`/`updateStmt.run(...)`, le `console.log`, le `appendAudit`, ET l'ancien `res.json`. Ne PAS insérer en plus de l'existant (sinon double envoi → « Cannot set headers after they are sent »). Le bloc de remplacement, placé après le calcul de `newPasswordHash` :
 
 ```javascript
             const nowSec = Math.floor(Date.now() / 1000);
