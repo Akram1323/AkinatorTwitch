@@ -9,3 +9,10 @@ paths = [
     '''AkinatorWeb/backend/tests/''',
     '''AkinatorWeb/backend/env\.example\.txt''',
 ]
+# Faux positif : constante de test JWT_SECRET utilisée par la CI
+# (.github/workflows/security.yml) et citée dans la doc/plans. Valeur publique
+# non sensible, jamais un vrai secret → exemptée précisément (pas un chemin entier,
+# pour que la doc reste scannée contre de vrais secrets).
+regexes = [
+    '''ci-secret-0123456789abcdef0123456789abcdef''',
+]

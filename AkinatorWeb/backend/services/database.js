@@ -84,6 +84,9 @@ function initializeTables() {
     try {
         db.exec('ALTER TABLE users ADD COLUMN a2f_last_step INTEGER');
     } catch (e) { /* Colonne existe déjà */ }
+    try {
+        db.exec('ALTER TABLE users ADD COLUMN password_changed_at INTEGER');
+    } catch (e) { /* Colonne existe déjà */ }
 
     // Table des transactions
     db.exec(`

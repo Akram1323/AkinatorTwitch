@@ -144,6 +144,13 @@ const authenticateToken = (req, res, next) => {
             algorithms: [config.jwt.algorithm]
         });
 
+        if (decoded.pending2FA) {
+            return res.status(401).json({
+                success: false,
+                error: 'Vérification 2FA requise'
+            });
+        }
+
         // Blacklist persistante (révocation au logout)
         const { isJtiRevoked } = require('../services/tokenService');
         if (isJtiRevoked(decoded.jti)) {
@@ -151,6 +158,20 @@ const authenticateToken = (req, res, next) => {
                 success: false,
                 error: 'Token révoqué, veuillez vous reconnecter'
             });
+        }
+
+        // Invalidation globale au changement de mot de passe : tout access token
+        // émis avant `password_changed_at` (secondes Unix) n'est plus honoré.
+        // NB : granularité 1 s (iat en secondes) → un token émis dans la même
+        // seconde que le changement survit (`<` strict). Compromis assumé qui
+        // préserve la session courante ré-émise ; fenêtre ≤ 1 s vs TTL 15 min.
+        // NB : ce findById ajoute un SELECT (PK indexée) par requête authentifiée.
+        const account = queries.users.findById.get(decoded.id);
+        if (!account) {
+            return res.status(401).json({ success: false, error: 'Session invalide, veuillez vous reconnecter' });
+        }
+        if (account.password_changed_at && decoded.iat < account.password_changed_at) {
+            return res.status(401).json({ success: false, error: 'Session expirée par changement de mot de passe' });
         }
 
         req.user = decoded;
@@ -183,11 +204,18 @@ const optionalAuth = (req, res, next) => {
                 algorithms: [config.jwt.algorithm]
             });
 
+            if (decoded.pending2FA) {
+                return next();
+            }
+
             // Blacklist persistante (révocation au logout) : un token révoqué
             // ne doit pas être honoré, mais optionalAuth ne bloque jamais la requête.
             const { isJtiRevoked } = require('../services/tokenService');
             if (!isJtiRevoked(decoded.jti)) {
-                req.user = decoded;
+                const account = queries.users.findById.get(decoded.id);
+                if (account && !(account.password_changed_at && decoded.iat < account.password_changed_at)) {
+                    req.user = decoded;
+                }
             }
         } catch (err) {
             // Token invalide, on continue sans user
@@ -233,6 +261,8 @@ const requireAdmin = async (req, res, next) => {
  * Validation et sanitization des entrées
  */
 const sanitizeInput = (req, res, next) => {
+    const SENSITIVE_KEYS = new Set(['password', 'currentPassword', 'newPassword', 'code', 'a2fCode']);
+
     // Nettoyer les paramètres de requête
     const sanitize = (obj) => {
         if (typeof obj === 'string') {
@@ -246,6 +276,7 @@ const sanitizeInput = (req, res, next) => {
         }
         if (typeof obj === 'object' && obj !== null) {
             for (const key in obj) {
+                if (SENSITIVE_KEYS.has(key)) continue; // ne pas altérer les secrets
                 obj[key] = sanitize(obj[key]);
             }
         }

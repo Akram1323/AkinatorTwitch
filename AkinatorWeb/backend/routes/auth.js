@@ -257,7 +257,8 @@ router.post('/login',
             // encryptedIP peut être null si l'IP n'a pas pu être chiffrée, c'est acceptable
             queries.users.updateLastLogin.run(encryptedIP || null, user.id);
 
-            // Logger la session (audit trail)
+            // Enregistrement d'audit de session (indépendant des tokens JWT :
+            // sert au journal de connexions, pas à la validité de l'access token).
             try {
                 const { db } = require('../services/database');
                 db.prepare(`INSERT INTO sessions (id, user_id, ip_address, user_agent, expires_at)
@@ -681,14 +682,21 @@ router.post('/change-password',
             // Hasher le nouveau mot de passe
             const newPasswordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
 
-            // Mettre à jour en base
-            const updateStmt = require('../services/database').db.prepare(
-                'UPDATE users SET password_hash = ? WHERE id = ?'
-            );
-            updateStmt.run(newPasswordHash, user.id);
+            const nowSec = Math.floor(Date.now() / 1000);
+            require('../services/database').db.prepare(
+                'UPDATE users SET password_hash = ?, password_changed_at = ? WHERE id = ?'
+            ).run(newPasswordHash, nowSec, user.id);
+
+            // Révoquer toutes les familles de refresh (déconnecte les autres sessions)
+            tokenService.revokeAllUserFamilies(user.id);
+
+            // Ré-émettre une paire fraîche pour la session courante (elle survit ;
+            // son nouvel access token a iat >= password_changed_at).
+            const refreshedUser = queries.users.findById.get(user.id);
+            const { accessToken, refreshToken } = tokenService.issueTokenPair(refreshedUser);
+            setAuthCookies(res, accessToken, refreshToken);
 
             console.log(`🔐 Mot de passe changé: ${user.username}`);
-
             appendAudit('auth.password.changed', { userId: user.id });
 
             res.json({
@@ -773,6 +781,13 @@ router.post('/forgot-password',
             require('../services/database').db.prepare(
                 'UPDATE users SET password_hash = ? WHERE id = ?'
             ).run(newPasswordHash, user.id);
+
+            const nowSec = Math.floor(Date.now() / 1000);
+            require('../services/database').db.prepare(
+                'UPDATE users SET password_changed_at = ? WHERE id = ?'
+            ).run(nowSec, user.id);
+            tokenService.revokeAllUserFamilies(user.id);
+            appendAudit('auth.password.reset', { userId: user.id });
 
             console.log(`🔐 Mot de passe réinitialisé via A2F: ${user.username}`);
 
