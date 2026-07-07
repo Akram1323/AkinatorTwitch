@@ -183,6 +183,16 @@ function initializeTables() {
     `);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_backup_user ON a2f_backup_codes(user_id)`);
 
+    // Tokens CSRF persistants (survivent au redémarrage)
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS csrf_tokens (
+            user_id TEXT NOT NULL,
+            token_hash TEXT NOT NULL,
+            expires_at DATETIME NOT NULL,
+            PRIMARY KEY (user_id, token_hash)
+        )
+    `);
+
     // Journal d'audit inviolable (append-only, chaînage de hash)
     db.exec(`
         CREATE TABLE IF NOT EXISTS audit_log (

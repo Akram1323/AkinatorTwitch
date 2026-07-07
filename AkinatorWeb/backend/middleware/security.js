@@ -37,6 +37,24 @@ const helmetConfig = helmet({
 });
 
 /**
+ * Store optionnel Redis pour le rate-limiting multi-instance.
+ * Sans REDIS_URL : store mémoire par défaut (mono-instance).
+ */
+function buildLimiterStore(prefix) {
+    if (!process.env.REDIS_URL) return undefined;
+    const { RedisStore } = require('rate-limit-redis');
+    const Redis = require('ioredis');
+    if (!global.__redisClient) {
+        global.__redisClient = new Redis(process.env.REDIS_URL);
+        console.log('✅ Rate-limiting adossé à Redis');
+    }
+    return new RedisStore({
+        prefix: `rl:${prefix}:`,
+        sendCommand: (...args) => global.__redisClient.call(...args)
+    });
+}
+
+/**
  * Rate Limiter global
  */
 const globalLimiter = rateLimit({
@@ -47,7 +65,8 @@ const globalLimiter = rateLimit({
         error: 'Trop de requêtes, veuillez réessayer plus tard'
     },
     standardHeaders: true,
-    legacyHeaders: false
+    legacyHeaders: false,
+    store: buildLimiterStore('global')
 });
 
 /**
@@ -59,7 +78,8 @@ const authLimiter = rateLimit({
     message: {
         success: false,
         error: 'Trop de tentatives de connexion, réessayez dans 15 minutes'
-    }
+    },
+    store: buildLimiterStore('auth')
 });
 
 /**
@@ -71,7 +91,8 @@ const registerLimiter = rateLimit({
     message: {
         success: false,
         error: 'Trop de tentatives d\'inscription, réessayez dans une heure'
-    }
+    },
+    store: buildLimiterStore('register')
 });
 
 /**
@@ -83,7 +104,8 @@ const a2fLimiter = rateLimit({
     message: {
         success: false,
         error: 'Trop de tentatives de vérification 2FA, réessayez dans 15 minutes'
-    }
+    },
+    store: buildLimiterStore('a2f')
 });
 
 /**
@@ -95,7 +117,8 @@ const paymentLimiter = rateLimit({
     message: {
         success: false,
         error: 'Veuillez patienter avant de soumettre un nouveau paiement'
-    }
+    },
+    store: buildLimiterStore('payment')
 });
 
 /**
