@@ -115,5 +115,6 @@ module.exports = {
     csrfProtection,
     generateCSRFToken,
     verifyCSRFToken,
-    getCSRFToken
+    getCSRFToken,
+    cleanupExpiredTokens
 };
