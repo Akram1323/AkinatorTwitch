@@ -10,6 +10,7 @@ const speakeasy = require('speakeasy');
 const QRCode = require('qrcode');
 const { db, queries } = require('../services/database');
 const { appendAudit } = require('../services/auditService');
+const { generateBackupCodes } = require('../services/twoFactor');
 
 /**
  * POST /api/a2f/setup
@@ -212,6 +213,29 @@ router.post('/disable', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('Erreur A2F disable:', error);
         res.status(500).json({ success: false, error: 'Erreur lors de la désactivation' });
+    }
+});
+
+/**
+ * POST /api/a2f/backup-codes
+ * Regénère les codes de secours (affichés une seule fois).
+ */
+router.post('/backup-codes', authenticateToken, async (req, res) => {
+    try {
+        const user = queries.users.findById.get(req.user.id);
+        if (!user || !user.a2f_enabled) {
+            return res.status(400).json({ success: false, error: 'La 2FA doit être activée' });
+        }
+        const codes = generateBackupCodes(user.id);
+        appendAudit('a2f.backup_codes.generated', { userId: user.id });
+        res.json({
+            success: true,
+            data: { codes },
+            message: 'Conservez ces codes en lieu sûr : ils ne seront plus jamais affichés.'
+        });
+    } catch (error) {
+        console.error('Erreur A2F backup-codes:', error);
+        res.status(500).json({ success: false, error: 'Erreur lors de la génération des codes' });
     }
 });
 

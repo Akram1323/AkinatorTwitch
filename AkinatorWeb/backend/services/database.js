@@ -167,6 +167,19 @@ function initializeTables() {
         )
     `);
 
+    // Codes de secours 2FA (hashés, usage unique)
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS a2f_backup_codes (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            code_hash TEXT NOT NULL,
+            used_at DATETIME,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_backup_user ON a2f_backup_codes(user_id)`);
+
     // Journal d'audit inviolable (append-only, chaînage de hash)
     db.exec(`
         CREATE TABLE IF NOT EXISTS audit_log (

@@ -414,7 +414,8 @@ router.post('/claim-daily', authenticateToken, (req, res) => {
 router.post('/verify-login-a2f',
     authLimiter,
     [
-        body('code').isLength({ min: 6, max: 6 }).isNumeric()
+        // Accepte un TOTP (6 chiffres) ou un code de secours (10 caractères hex)
+        body('code').trim().isLength({ min: 6, max: 10 })
     ],
     async (req, res) => {
         try {
@@ -422,7 +423,7 @@ router.post('/verify-login-a2f',
             if (!errors.isEmpty()) {
                 return res.status(400).json({
                     success: false,
-                    error: 'Code invalide (6 chiffres)'
+                    error: 'Code invalide'
                 });
             }
 
@@ -466,21 +467,37 @@ router.post('/verify-login-a2f',
                 });
             }
 
-            // Vérifier le code TOTP
-            const speakeasy = require('speakeasy');
-            const isValid = speakeasy.totp.verify({
-                secret: user.a2f_secret,
-                encoding: 'base32',
-                token: code,
-                window: 1
-            });
-
-            if (!isValid) {
-                appendAudit('auth.2fa.failed', { userId: decoded.id, ipHash: hashIPForLogging(rawIP) });
-                return res.status(401).json({
-                    success: false,
-                    error: 'Code A2F incorrect'
+            // Code de secours (10 caractères hex) accepté à la place du TOTP
+            let a2fMethod = 'totp';
+            if (String(code).trim().length === 10) {
+                a2fMethod = 'backup_code';
+                const { consumeBackupCode } = require('../services/twoFactor');
+                if (!consumeBackupCode(user.id, code)) {
+                    appendAudit('auth.2fa.failed', { userId: decoded.id, ipHash: hashIPForLogging(rawIP), details: { method: 'backup_code' } });
+                    return res.status(401).json({
+                        success: false,
+                        error: 'Code de secours invalide'
+                    });
+                }
+                // → continue vers l'émission des tokens (même code que TOTP valide,
+                //   l'audit de succès unique plus bas couvre les deux méthodes)
+            } else {
+                // Vérifier le code TOTP
+                const speakeasy = require('speakeasy');
+                const isValid = speakeasy.totp.verify({
+                    secret: user.a2f_secret,
+                    encoding: 'base32',
+                    token: code,
+                    window: 1
                 });
+
+                if (!isValid) {
+                    appendAudit('auth.2fa.failed', { userId: decoded.id, ipHash: hashIPForLogging(rawIP) });
+                    return res.status(401).json({
+                        success: false,
+                        error: 'Code A2F incorrect'
+                    });
+                }
             }
 
             // Connexion réussie
@@ -502,7 +519,7 @@ router.post('/verify-login-a2f',
 
             console.log(`✅ Connexion A2F: ${user.username}`);
 
-            appendAudit('auth.2fa.success', { userId: decoded.id, ipHash: hashIPForLogging(rawIP) });
+            appendAudit('auth.2fa.success', { userId: decoded.id, ipHash: hashIPForLogging(rawIP), details: { method: a2fMethod } });
 
             res.json({
                 success: true,
