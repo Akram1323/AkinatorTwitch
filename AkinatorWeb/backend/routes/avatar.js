@@ -46,6 +46,9 @@ const upload = multer({
     }
 });
 
+// Limite anti « compression bomb » : 16,7 MP max (4096×4096)
+const MAX_PIXELS = 4096 * 4096;
+
 /**
  * Valide qu'un buffer est vraiment une image
  * Protection contre les fichiers déguisés (ex: PHP avec extension .jpg)
@@ -108,7 +111,7 @@ router.post('/upload', authenticateToken, upload.single('avatar'), async (req, r
         // - Conversion en WebP (plus léger, moderne)
         // - Redimensionnement à 256x256 max
         // - Suppression des métadonnées EXIF (vie privée)
-        await sharp(req.file.buffer)
+        await sharp(req.file.buffer, { limitInputPixels: MAX_PIXELS })
             .resize(256, 256, {
                 fit: 'cover',
                 position: 'center'
