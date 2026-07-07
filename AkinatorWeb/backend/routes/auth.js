@@ -24,6 +24,7 @@ const { authLimiter, registerLimiter, authenticateToken } = require('../middlewa
 const { encryptIP, hashIPForLogging } = require('../services/encryption');
 const tokenService = require('../services/tokenService');
 const { appendAudit } = require('../services/auditService');
+const { validateNewPassword } = require('../services/passwordService');
 
 const router = express.Router();
 
@@ -107,6 +108,12 @@ router.post('/register',
                     success: false,
                     error: 'Cet identifiant est déjà utilisé'
                 });
+            }
+
+            // Vérifier la robustesse et la non-compromission du mot de passe
+            const passwordCheck = await validateNewPassword(password, username);
+            if (!passwordCheck.ok) {
+                return res.status(400).json({ success: false, error: passwordCheck.error });
             }
 
             // Hash du mot de passe avec bcrypt (12 rounds = sécurisé)
@@ -656,6 +663,12 @@ router.post('/change-password',
                 }
             }
 
+            // Vérifier la robustesse et la non-compromission du nouveau mot de passe
+            const passwordCheck = await validateNewPassword(newPassword, user.username);
+            if (!passwordCheck.ok) {
+                return res.status(400).json({ success: false, error: passwordCheck.error });
+            }
+
             // Hasher le nouveau mot de passe
             const newPasswordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
 
@@ -744,6 +757,12 @@ router.post('/forgot-password',
                     success: false,
                     error: 'Code A2F incorrect'
                 });
+            }
+
+            // Vérifier la robustesse et la non-compromission du nouveau mot de passe
+            const passwordCheck = await validateNewPassword(newPassword, username);
+            if (!passwordCheck.ok) {
+                return res.status(400).json({ success: false, error: passwordCheck.error });
             }
 
             // Code A2F valide : réinitialiser le mot de passe
