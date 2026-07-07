@@ -4,6 +4,11 @@
 
 const axios = require('axios');
 
+if (!process.env.ADMIN_PASSWORD) {
+    console.error('❌ Définir ADMIN_PASSWORD');
+    process.exit(1);
+}
+
 const BASE_URL = 'http://localhost:3000';
 
 async function testLogin() {
@@ -12,7 +17,7 @@ async function testLogin() {
         
         const response = await axios.post(`${BASE_URL}/api/auth/login`, {
             username: 'Akinator',
-            password: '6?;8aH3V3yBe@r'
+            password: process.env.ADMIN_PASSWORD
         }, {
             validateStatus: () => true // Accepter tous les codes de statut
         });

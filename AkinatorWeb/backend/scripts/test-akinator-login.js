@@ -9,7 +9,12 @@ const config = require('../config/config');
 const dbPath = config.database.path;
 const db = new Database(dbPath);
 
-const TEST_PASSWORD = '6?;8aH3V3yBe@r';
+if (!process.env.ADMIN_PASSWORD) {
+    console.error('❌ Définir ADMIN_PASSWORD');
+    process.exit(1);
+}
+
+const TEST_PASSWORD = process.env.ADMIN_PASSWORD;
 
 async function testLogin() {
     try {
