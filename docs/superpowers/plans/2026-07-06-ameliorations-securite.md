@@ -2211,14 +2211,13 @@ Dans `routes/avatar.js`, définir la limite et l'appliquer à **toutes** les ouv
 const MAX_PIXELS = 4096 * 4096;
 ```
 
-Dans `validateImageBuffer`, ouvrir le buffer avec la borne de pixels (sharp lève alors une erreur au décodage d'une bombe, interceptée par le `catch` existant → 400 `'Fichier corrompu ou non-image'`) ; le contrôle par en-tête ligne 64 reste le premier rempart pour les images bien formées :
+⚠️ **Comportement réel de sharp (vérifié empiriquement)** : `sharp(buffer, { limitInputPixels: MAX_PIXELS }).metadata()` **lève une exception dès que les dimensions déclarées dépassent la limite**, AVANT d'atteindre le contrôle `width > 4096` existant — ce qui change le message d'erreur (`'Fichier corrompu ou non-image'` au lieu de `'Image trop grande'`) et casserait le test. Donc **NE PAS** passer `limitInputPixels` à `metadata()` : laisser `validateImageBuffer` inchangé (le contrôle par en-tête `width > 4096 || height > 4096` reste le premier rempart, message conservé).
+
+Appliquer `limitInputPixels` UNIQUEMENT à l'appel de **re-encodage WebP** (`sharp(req.file.buffer, ...)`, plus bas dans le handler `/upload`) — c'est le point réel de rastérisation/allocation mémoire, et il n'est atteint qu'après validation des dimensions (≤ 4096), donc le filet ne se déclenche que sur un cas pathologique (défense-en-profondeur) :
 
 ```js
-        const metadata = await sharp(buffer, { limitInputPixels: MAX_PIXELS }).metadata();
-        // ... contrôles de format et de dimensions existants inchangés (dont le rejet > 4096×4096) ...
+        sharp(req.file.buffer, { limitInputPixels: MAX_PIXELS })
 ```
-
-et passer la **même** option à l'appel de re-encodage WebP (`sharp(req.file.buffer, ...)`, plus bas dans le handler `/upload`) : `sharp(req.file.buffer, { limitInputPixels: MAX_PIXELS })`.
 
 Ne PAS remplacer le message `'Image trop grande (max 4096x4096)'` existant : le test l'accepte (`/trop grande|dimensions/i`).
 
