@@ -1,0 +1,12 @@
+#!/bin/sh
+# Secret scanning avant chaque commit (gitleaks)
+if command -v gitleaks >/dev/null 2>&1; then
+    if ! gitleaks protect --staged --redact --config .gitleaks.toml; then
+        echo "❌ gitleaks : secret potentiel détecté, commit bloqué."
+        echo "   Si faux positif : ajouter une exception dans .gitleaks.toml"
+        exit 1
+    fi
+else
+    echo "⚠️ gitleaks non installé — scan local ignoré (la CI scanne quand même)."
+    echo "   Installation : https://github.com/gitleaks/gitleaks#installing"
+fi

@@ -131,3 +131,9 @@ L'interface moderne inclut :
 ## 📄 Licence
 
 Projet pédagogique - Tous droits réservés
+
+## Développement — hooks git
+
+Après clonage : `git config core.hooksPath .githooks` puis installer
+[gitleaks](https://github.com/gitleaks/gitleaks#installing) pour le
+scan de secrets en pre-commit (la CI le rejoue systématiquement).
