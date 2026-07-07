@@ -203,7 +203,12 @@ async function ensureAdminAccount() {
     const { v4: uuidv4 } = require('uuid');
 
     const adminUsername = process.env.ADMIN_USERNAME || 'Akinator';
-    const adminPassword = process.env.ADMIN_PASSWORD || '6?;8aH3V3yBe@r';
+    const adminPassword = process.env.ADMIN_PASSWORD;
+    if (!adminPassword) {
+        console.warn('⚠️ ADMIN_PASSWORD non défini : création du compte admin ignorée.');
+        console.warn('   Définissez ADMIN_USERNAME / ADMIN_PASSWORD dans l\'environnement.');
+        return;
+    }
 
     const existing = queries.users.findByUsername.get(adminUsername);
     if (existing) {
