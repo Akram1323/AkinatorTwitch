@@ -10,25 +10,25 @@ const crypto = require('crypto');
 const { db } = require('../services/database');
 
 // Durée de vie d'un token CSRF (1 heure)
-const CSRF_TOKEN_EXPIRY = 60 * 60 * 1000;
+const CSRF_TOKEN_EXPIRY_MINUTES = 60;
+
+function sha256(text) {
+    return crypto.createHash('sha256').update(text).digest('hex');
+}
 
 /**
- * Génère un token CSRF et le stocke en session
+ * Génère un token CSRF persisté en base (hashé)
  */
 function generateCSRFToken(userId) {
     const token = crypto.randomBytes(32).toString('hex');
-    const expiresAt = Date.now() + CSRF_TOKEN_EXPIRY;
-    
-    // Stocker le token (en mémoire pour simplifier, utiliser Redis en production)
-    if (!global.csrfTokens) {
-        global.csrfTokens = new Map();
-    }
-    
-    global.csrfTokens.set(`${userId}:${token}`, expiresAt);
-    
+    db.prepare(`
+        INSERT INTO csrf_tokens (user_id, token_hash, expires_at)
+        VALUES (?, ?, datetime('now', '+' || ? || ' minutes'))
+    `).run(userId, sha256(token), CSRF_TOKEN_EXPIRY_MINUTES);
+
     // Nettoyer les tokens expirés
     cleanupExpiredTokens();
-    
+
     return token;
 }
 
@@ -39,38 +39,20 @@ function verifyCSRFToken(userId, token) {
     if (!token || !userId) {
         return false;
     }
-    
-    if (!global.csrfTokens) {
-        return false;
-    }
-    
-    const key = `${userId}:${token}`;
-    const expiresAt = global.csrfTokens.get(key);
-    
-    if (!expiresAt) {
-        return false;
-    }
-    
-    if (Date.now() > expiresAt) {
-        global.csrfTokens.delete(key);
-        return false;
-    }
-    
-    return true;
+
+    const row = db.prepare(`
+        SELECT 1 FROM csrf_tokens
+        WHERE user_id = ? AND token_hash = ? AND expires_at > datetime('now')
+    `).get(userId, sha256(token));
+
+    return !!row;
 }
 
 /**
- * Nettoie les tokens expirés
+ * Purge les tokens expirés
  */
 function cleanupExpiredTokens() {
-    if (!global.csrfTokens) return;
-    
-    const now = Date.now();
-    for (const [key, expiresAt] of global.csrfTokens.entries()) {
-        if (now > expiresAt) {
-            global.csrfTokens.delete(key);
-        }
-    }
+    db.prepare(`DELETE FROM csrf_tokens WHERE expires_at <= datetime('now')`).run();
 }
 
 /**
@@ -133,5 +115,6 @@ module.exports = {
     csrfProtection,
     generateCSRFToken,
     verifyCSRFToken,
-    getCSRFToken
+    getCSRFToken,
+    cleanupExpiredTokens
 };

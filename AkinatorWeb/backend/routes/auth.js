@@ -20,26 +20,32 @@ const { body, validationResult } = require('express-validator');
 
 const config = require('../config/config');
 const { queries } = require('../services/database');
-const { authLimiter, registerLimiter, authenticateToken } = require('../middleware/security');
-const { encryptIP } = require('../services/encryption');
+const { authLimiter, registerLimiter, a2fLimiter, authenticateToken } = require('../middleware/security');
+const { encryptIP, hashIPForLogging } = require('../services/encryption');
+const tokenService = require('../services/tokenService');
+const { appendAudit } = require('../services/auditService');
+const { validateNewPassword } = require('../services/passwordService');
 
 const router = express.Router();
 
-// JWT blacklist en mémoire (tokens révoqués)
-const tokenBlacklist = new Set();
-
-// Nettoyage périodique des tokens expirés du blacklist (toutes les heures)
-setInterval(() => {
-    tokenBlacklist.forEach(token => {
-        try {
-            jwt.verify(token, config.jwt.secret);
-        } catch (e) {
-            if (e.name === 'TokenExpiredError') tokenBlacklist.delete(token);
-        }
+/** Pose les cookies d'authentification httpOnly */
+function setAuthCookies(res, accessToken, refreshToken) {
+    const secure = process.env.NODE_ENV === 'production';
+    res.cookie('access_token', accessToken, {
+        httpOnly: true, secure, sameSite: 'strict',
+        maxAge: 15 * 60 * 1000, path: '/'
     });
-}, 3600 * 1000);
+    res.cookie('refresh_token', refreshToken, {
+        httpOnly: true, secure, sameSite: 'strict',
+        maxAge: tokenService.REFRESH_TTL_DAYS * 24 * 3600 * 1000,
+        path: '/api/auth' // envoyé uniquement à /api/auth/refresh et /api/auth/logout
+    });
+}
 
-// tokenBlacklist sera exporté avec le router à la fin du fichier
+function clearAuthCookies(res) {
+    res.clearCookie('access_token', { path: '/' });
+    res.clearCookie('refresh_token', { path: '/api/auth' });
+}
 
 // Constantes de sécurité
 const BCRYPT_ROUNDS = 12;
@@ -94,18 +100,26 @@ router.post('/register',
             // Chiffrer l'IP pour conformité RGPD
             const encryptedIP = encryptIP(rawIP);
 
-            // Vérifier si l'utilisateur existe
-            const existingUser = queries.users.findByUsername.get(username);
-            
-            if (existingUser) {
-                return res.status(409).json({
-                    success: false,
-                    error: 'Cet identifiant est déjà utilisé'
-                });
+            // Vérifier la robustesse et la non-compromission du mot de passe
+            const passwordCheck = await validateNewPassword(password, username);
+            if (!passwordCheck.ok) {
+                return res.status(400).json({ success: false, error: passwordCheck.error });
             }
 
-            // Hash du mot de passe avec bcrypt (12 rounds = sécurisé)
+            // Hash calculé AVANT le test d'existence : temps de réponse constant
+            // que l'identifiant soit pris ou non (anti-énumération par timing)
             const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+
+            // Vérifier si l'utilisateur existe
+            const existingUser = queries.users.findByUsername.get(username);
+
+            if (existingUser) {
+                // Message volontairement générique : ne pas confirmer l'existence du compte
+                return res.status(400).json({
+                    success: false,
+                    error: 'Inscription impossible. Vérifiez vos informations et réessayez.'
+                });
+            }
 
             // Créer l'utilisateur avec 3 jetons de départ
             const userId = uuidv4();
@@ -115,12 +129,12 @@ router.post('/register',
             // Enregistrer la transaction de jetons offerts
             queries.transactions.create.run(uuidv4(), userId, 'gift', 3, null, 'completed');
 
-            // Générer le token JWT
-            const token = jwt.sign(
-                { id: userId, username },
-                config.jwt.secret,
-                { expiresIn: config.jwt.expiresIn, algorithm: config.jwt.algorithm }
-            );
+            // Journal d'audit (inscription)
+            appendAudit('auth.register', { userId, ipHash: hashIPForLogging(rawIP), details: { username } });
+
+            // Générer la paire de jetons (access court + refresh rotatif) et poser les cookies
+            const { accessToken, refreshToken } = tokenService.issueTokenPair({ id: userId, username, is_admin: 0 });
+            setAuthCookies(res, accessToken, refreshToken);
 
             // Ne pas logger l'IP en clair (conformité RGPD)
             console.log(`✅ Nouvel utilisateur inscrit: ${username}`);
@@ -129,7 +143,6 @@ router.post('/register',
                 success: true,
                 message: 'Compte créé avec succès ! 3 jetons offerts !',
                 data: {
-                    token,
                     user: {
                         id: userId,
                         username,
@@ -188,6 +201,7 @@ router.post('/login',
             // Vérifier si le compte est verrouillé
             if (user.locked_until && new Date(user.locked_until) > new Date()) {
                 const remainingMinutes = Math.ceil((new Date(user.locked_until) - new Date()) / 60000);
+                appendAudit('auth.login.locked', { userId: user.id, ipHash: hashIPForLogging(rawIP) });
                 return res.status(423).json({
                     success: false,
                     error: `Compte temporairement verrouillé. Réessayez dans ${remainingMinutes} minutes.`
@@ -204,12 +218,14 @@ router.post('/login',
                 const remaining = MAX_LOGIN_ATTEMPTS - attempts;
                 
                 if (remaining <= 0) {
+                    appendAudit('auth.login.locked', { userId: user.id, ipHash: hashIPForLogging(rawIP) });
                     return res.status(423).json({
                         success: false,
                         error: `Trop de tentatives. Compte verrouillé pour ${LOCKOUT_DURATION_MINUTES} minutes.`
                     });
                 }
-                
+
+                appendAudit('auth.login.failed', { userId: user.id, ipHash: hashIPForLogging(rawIP), details: { username } });
                 return res.status(401).json({
                     success: false,
                     error: `Identifiants incorrects. ${remaining} tentative(s) restante(s).`
@@ -249,12 +265,9 @@ router.post('/login',
                     .run(uuidv4(), user.id, encryptedIP || null, req.headers['user-agent'] || null);
             } catch (e) { /* non bloquant */ }
 
-            // Générer le token
-            const token = jwt.sign(
-                { id: user.id, username: user.username, is_admin: user.is_admin === 1 },
-                config.jwt.secret,
-                { expiresIn: config.jwt.expiresIn, algorithm: config.jwt.algorithm }
-            );
+            // Générer la paire de jetons (access court + refresh rotatif) et poser les cookies
+            const { accessToken, refreshToken } = tokenService.issueTokenPair(user);
+            setAuthCookies(res, accessToken, refreshToken);
 
             // Vérifier si peut claim les jetons quotidiens
             let canClaimDaily = false;
@@ -269,10 +282,11 @@ router.post('/login',
             // Ne pas logger l'IP en clair (conformité RGPD)
             console.log(`✅ Connexion: ${username}`);
 
+            appendAudit('auth.login.success', { userId: user.id, ipHash: hashIPForLogging(rawIP) });
+
             res.json({
                 success: true,
                 data: {
-                    token,
                     user: {
                         id: user.id,
                         username: user.username,
@@ -400,9 +414,11 @@ router.post('/claim-daily', authenticateToken, (req, res) => {
  * SÉCURISÉ : Utilise le token temporaire pour éviter IDOR
  */
 router.post('/verify-login-a2f',
+    a2fLimiter,
     authLimiter,
     [
-        body('code').isLength({ min: 6, max: 6 }).isNumeric()
+        // Accepte un TOTP (6 chiffres) ou un code de secours (10 caractères hex)
+        body('code').trim().isLength({ min: 6, max: 10 })
     ],
     async (req, res) => {
         try {
@@ -410,7 +426,7 @@ router.post('/verify-login-a2f',
             if (!errors.isEmpty()) {
                 return res.status(400).json({
                     success: false,
-                    error: 'Code invalide (6 chiffres)'
+                    error: 'Code invalide'
                 });
             }
 
@@ -454,31 +470,40 @@ router.post('/verify-login-a2f',
                 });
             }
 
-            // Vérifier le code TOTP
-            const speakeasy = require('speakeasy');
-            const isValid = speakeasy.totp.verify({
-                secret: user.a2f_secret,
-                encoding: 'base32',
-                token: code,
-                window: 1
-            });
-
-            if (!isValid) {
-                return res.status(401).json({
-                    success: false,
-                    error: 'Code A2F incorrect'
-                });
+            // Code de secours (10 caractères hex) accepté à la place du TOTP
+            let a2fMethod = 'totp';
+            if (String(code).trim().length === 10) {
+                a2fMethod = 'backup_code';
+                const { consumeBackupCode } = require('../services/twoFactor');
+                if (!consumeBackupCode(user.id, code)) {
+                    appendAudit('auth.2fa.failed', { userId: decoded.id, ipHash: hashIPForLogging(rawIP), details: { method: 'backup_code' } });
+                    return res.status(401).json({
+                        success: false,
+                        error: 'Code de secours invalide'
+                    });
+                }
+                // → continue vers l'émission des tokens (même code que TOTP valide,
+                //   l'audit de succès unique plus bas couvre les deux méthodes)
+            } else {
+                // Vérifier le code TOTP (garde anti-rejeu incluse)
+                const { verifyTotp } = require('../services/twoFactor');
+                const totpResult = verifyTotp(user, code);
+                if (!totpResult.ok) {
+                    appendAudit('auth.2fa.failed', { userId: decoded.id, ipHash: hashIPForLogging(rawIP), details: { method: 'totp' } });
+                    return res.status(401).json({
+                        success: false,
+                        error: totpResult.error
+                    });
+                }
             }
 
             // Connexion réussie
             // encryptedIP peut être null si l'IP n'a pas pu être chiffrée, c'est acceptable
             queries.users.updateLastLogin.run(encryptedIP || null, user.id);
 
-            const token = jwt.sign(
-                { id: user.id, username: user.username, is_admin: user.is_admin === 1 },
-                config.jwt.secret,
-                { expiresIn: config.jwt.expiresIn, algorithm: config.jwt.algorithm }
-            );
+            // Générer la paire de jetons (access court + refresh rotatif) et poser les cookies
+            const { accessToken, refreshToken } = tokenService.issueTokenPair(user);
+            setAuthCookies(res, accessToken, refreshToken);
 
             let canClaimDaily = false;
             try {
@@ -491,10 +516,11 @@ router.post('/verify-login-a2f',
 
             console.log(`✅ Connexion A2F: ${user.username}`);
 
+            appendAudit('auth.2fa.success', { userId: decoded.id, ipHash: hashIPForLogging(rawIP), details: { method: a2fMethod } });
+
             res.json({
                 success: true,
                 data: {
-                    token,
                     user: {
                         id: user.id,
                         username: user.username,
@@ -636,19 +662,20 @@ router.post('/change-password',
                         requiresA2F: true
                     });
                 }
-                const speakeasy = require('speakeasy');
-                const valid = speakeasy.totp.verify({
-                    secret: user.a2f_secret,
-                    encoding: 'base32',
-                    token: a2fCode,
-                    window: 1
-                });
-                if (!valid) {
+                const { verifyTotp } = require('../services/twoFactor');
+                const totpResult = verifyTotp(user, a2fCode);
+                if (!totpResult.ok) {
                     return res.status(401).json({
                         success: false,
-                        error: 'Code A2F incorrect'
+                        error: totpResult.error
                     });
                 }
+            }
+
+            // Vérifier la robustesse et la non-compromission du nouveau mot de passe
+            const passwordCheck = await validateNewPassword(newPassword, user.username);
+            if (!passwordCheck.ok) {
+                return res.status(400).json({ success: false, error: passwordCheck.error });
             }
 
             // Hasher le nouveau mot de passe
@@ -661,6 +688,8 @@ router.post('/change-password',
             updateStmt.run(newPasswordHash, user.id);
 
             console.log(`🔐 Mot de passe changé: ${user.username}`);
+
+            appendAudit('auth.password.changed', { userId: user.id });
 
             res.json({
                 success: true,
@@ -724,19 +753,19 @@ router.post('/forgot-password',
             }
 
             // Vérifier le code A2F
-            const speakeasy = require('speakeasy');
-            const valid = speakeasy.totp.verify({
-                secret: user.a2f_secret,
-                encoding: 'base32',
-                token: a2fCode,
-                window: 1
-            });
-
-            if (!valid) {
+            const { verifyTotp } = require('../services/twoFactor');
+            const totpResult = verifyTotp(user, a2fCode);
+            if (!totpResult.ok) {
                 return res.status(401).json({
                     success: false,
-                    error: 'Code A2F incorrect'
+                    error: totpResult.error
                 });
+            }
+
+            // Vérifier la robustesse et la non-compromission du nouveau mot de passe
+            const passwordCheck = await validateNewPassword(newPassword, username);
+            if (!passwordCheck.ok) {
+                return res.status(400).json({ success: false, error: passwordCheck.error });
             }
 
             // Code A2F valide : réinitialiser le mot de passe
@@ -764,17 +793,52 @@ router.post('/forgot-password',
 
 /**
  * POST /api/auth/logout
- * Révoque le token JWT (blacklist)
+ * Révoque le token JWT (blacklist persistante) et la famille de refresh tokens
  */
 router.post('/logout', authenticateToken, (req, res) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-    if (token) {
-        tokenBlacklist.add(token);
-        console.log(`👋 Déconnexion: ${req.user.username}`);
+    // Révoquer l'access token courant (blacklist persistante par jti)
+    tokenService.revokeAccessToken(req.user);
+    // Révoquer la famille de refresh tokens si le cookie est présent
+    if (req.cookies && req.cookies.refresh_token) {
+        tokenService.revokeFamilyByToken(req.cookies.refresh_token);
     }
-    res.json({ success: true, message: 'Déconnecté avec succès' });
+    clearAuthCookies(res);
+    console.log(`👋 Déconnexion: ${req.user.username}`);
+    appendAudit('auth.logout', { userId: req.user.id });
+    res.json({ success: true, message: 'Déconnexion réussie' });
+});
+
+/**
+ * POST /api/auth/refresh
+ * Rotation du refresh token (cookie httpOnly). Pas d'access token requis.
+ */
+router.post('/refresh', (req, res) => {
+    const presented = req.cookies && req.cookies.refresh_token;
+    if (!presented) {
+        return res.status(401).json({ success: false, error: 'Session absente, veuillez vous reconnecter' });
+    }
+
+    const result = tokenService.rotateRefreshToken(presented);
+    if (!result.ok) {
+        clearAuthCookies(res);
+        const error = result.reason === 'reuse'
+            ? 'Réutilisation de jeton détectée, session révoquée par sécurité'
+            : 'Session expirée, veuillez vous reconnecter';
+        if (result.reason === 'reuse') {
+            console.warn('⚠️ SECURITY: réutilisation de refresh token détectée');
+            appendAudit('auth.refresh.reuse_detected', { ipHash: hashIPForLogging(req.ip) });
+        }
+        return res.status(401).json({ success: false, error });
+    }
+
+    const user = queries.users.findById.get(result.userId);
+    if (!user) {
+        clearAuthCookies(res);
+        return res.status(401).json({ success: false, error: 'Utilisateur introuvable' });
+    }
+
+    setAuthCookies(res, tokenService.signAccessToken(user), result.newToken);
+    res.json({ success: true });
 });
 
 module.exports = router;
-module.exports.tokenBlacklist = tokenBlacklist;

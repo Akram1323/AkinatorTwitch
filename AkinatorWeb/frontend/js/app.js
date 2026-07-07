@@ -53,14 +53,13 @@ document.addEventListener('DOMContentLoaded', async function() {
         return;
     }
 
-    if (API.token) {
-        await loadUserProfile();
-        // Récupérer le token CSRF après chargement du profil
-        try {
-            await API.refreshCSRFToken();
-        } catch (e) {
-            console.warn('⚠️ CSRF token non disponible:', e);
-        }
+    // La session vit dans les cookies httpOnly : on tente de la restaurer
+    var user = await API.bootstrapSession();
+    if (user) {
+        currentUser = user;
+        updateUIForLoggedInUser();
+    } else {
+        updateUIForLoggedOutUser();
     }
 
     createParticles();
@@ -339,22 +338,6 @@ function showProfileModal() {
 // Authentification
 // ══════════════════════════════════════════════════════════════
 
-async function loadUserProfile() {
-    try {
-        var response = await API.getProfile();
-        if (response.success) {
-            currentUser = response.data;
-            updateUIForLoggedInUser();
-            
-            // dailyBonus supprimé de la page d'accueil
-        }
-    } catch (error) {
-        console.error('Token invalide, déconnexion...', error);
-        API.logout();
-        currentUser = null;
-    }
-}
-
 function updateUIForLoggedInUser() {
     document.getElementById('authButtons').style.display = 'none';
     document.getElementById('userMenu').style.display = 'flex';
@@ -572,8 +555,6 @@ async function handleLogin(event) {
             
             currentUser = response.data.user;
             updateUIForLoggedInUser();
-            // Récupérer le token CSRF après inscription
-            await API.refreshCSRFToken();
             closeModal('loginModal');
             showToast('Content de vous revoir, ' + username + ' !', 'success');
             document.getElementById('loginForm').reset();

@@ -1,0 +1,52 @@
+name: Sécurité
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  secret-scan:
+    name: Secret scanning (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # historique complet : détecte aussi les secrets déjà commités
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  dependances:
+    name: Audit des dépendances
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: AkinatorWeb/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: AkinatorWeb/.node-version
+          cache: npm
+          cache-dependency-path: AkinatorWeb/backend/package-lock.json
+      - run: npm ci
+      - run: npm audit --audit-level=high
+
+  tests:
+    name: Tests backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: AkinatorWeb/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: AkinatorWeb/.node-version
+          cache: npm
+          cache-dependency-path: AkinatorWeb/backend/package-lock.json
+      - run: npm ci
+      - run: npm test
+        env:
+          JWT_SECRET: ci-secret-0123456789abcdef0123456789abcdef

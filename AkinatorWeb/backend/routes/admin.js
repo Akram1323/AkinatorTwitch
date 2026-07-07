@@ -11,6 +11,7 @@ const { runFullCleanup } = require('../services/cleanup');
 const { authenticateToken, requireAdmin } = require('../middleware/security');
 const { queries } = require('../services/database');
 const { decryptIP } = require('../services/encryption');
+const { appendAudit, verifyAuditChain } = require('../services/auditService');
 
 const router = express.Router();
 
@@ -167,7 +168,9 @@ router.delete('/users/:id', async (req, res) => {
         }
         
         queries.users.delete.run(req.params.id);
-        
+
+        appendAudit('admin.user.delete', { userId: req.user.id, details: { targetId: req.params.id } });
+
         res.json({
             success: true,
             message: `Utilisateur ${user.username} supprimé avec succès`
@@ -211,7 +214,9 @@ router.post('/users/:id/tokens', async (req, res) => {
         console.log(`🔧 Admin ${req.user.username} modifie les jetons de ${user.username}: ${user.tokens} -> ${amount}`);
         
         queries.users.setTokens.run(amount, req.params.id);
-        
+
+        appendAudit('admin.user.tokens', { userId: req.user.id, details: { targetId: req.params.id, amount } });
+
         res.json({
             success: true,
             message: `Jetons de ${user.username} mis à jour: ${amount}`,
@@ -253,7 +258,9 @@ router.post('/users/:id/promote', async (req, res) => {
         
         const db = require('../services/database').db;
         db.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').run(req.params.id);
-        
+
+        appendAudit('admin.user.promote', { userId: req.user.id, details: { targetId: req.params.id } });
+
         res.json({
             success: true,
             message: `${user.username} promu administrateur`
@@ -299,7 +306,9 @@ router.post('/users/:id/demote', async (req, res) => {
         
         const db = require('../services/database').db;
         db.prepare('UPDATE users SET is_admin = 0 WHERE id = ?').run(req.params.id);
-        
+
+        appendAudit('admin.user.demote', { userId: req.user.id, details: { targetId: req.params.id } });
+
         res.json({
             success: true,
             message: `${user.username} rétrogradé en utilisateur normal`
@@ -331,7 +340,9 @@ router.post('/users/:id/unlock', async (req, res) => {
         
         // Réinitialiser les tentatives et déverrouiller
         queries.users.resetFailedLogin.run(req.params.id);
-        
+
+        appendAudit('admin.user.unlock', { userId: req.user.id, details: { targetId: req.params.id } });
+
         res.json({
             success: true,
             message: `Compte ${user.username} déverrouillé avec succès`
@@ -386,6 +397,8 @@ router.post('/transactions/:id/approve', async (req, res) => {
 
         console.log(`✅ Admin ${req.user.username} approuve transaction ${tx.id} (+${tx.amount} jetons)`);
 
+        appendAudit('admin.tx.approve', { userId: req.user.id, details: { txId: tx.id } });
+
         res.json({ success: true, message: `Transaction approuvée: +${tx.amount} jetons crédités` });
     } catch (error) {
         console.error('❌ Erreur approbation:', error);
@@ -406,6 +419,8 @@ router.post('/transactions/:id/reject', async (req, res) => {
         queries.transactions.updateStatus.run('failed', tx.id);
 
         console.log(`❌ Admin ${req.user.username} rejette transaction ${tx.id}`);
+
+        appendAudit('admin.tx.reject', { userId: req.user.id, details: { txId: tx.id } });
 
         res.json({ success: true, message: 'Transaction rejetée' });
     } catch (error) {
@@ -434,6 +449,36 @@ router.get('/cleanup-ips', async (req, res) => {
             success: false,
             error: 'Erreur lors du nettoyage des IPs'
         });
+    }
+});
+
+/**
+ * GET /api/admin/audit
+ * Dernières entrées du journal d'audit
+ */
+router.get('/audit', async (req, res) => {
+    try {
+        const db = require('../services/database').db;
+        const limit = Math.min(Math.max(parseInt(req.query.limit) || 100, 1), 500);
+        const entries = db.prepare('SELECT * FROM audit_log ORDER BY id DESC LIMIT ?').all(limit);
+
+        res.json({ success: true, data: { entries } });
+    } catch (error) {
+        console.error('❌ Erreur audit log:', error);
+        res.status(500).json({ success: false, error: 'Erreur lors de la récupération du journal' });
+    }
+});
+
+/**
+ * GET /api/admin/audit/verify
+ * Vérifie l'intégrité de la chaîne d'audit
+ */
+router.get('/audit/verify', async (req, res) => {
+    try {
+        res.json({ success: true, data: verifyAuditChain() });
+    } catch (error) {
+        console.error('❌ Erreur vérification audit:', error);
+        res.status(500).json({ success: false, error: 'Erreur lors de la vérification de la chaîne' });
     }
 });
 

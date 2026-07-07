@@ -133,9 +133,13 @@ Ouvrez ensuite **http://localhost:3000** dans votre navigateur.
 | Variable | Requis | Description |
 |----------|:------:|-------------|
 | `JWT_SECRET` | ✅ | Clé secrète JWT (≥ 64 caractères aléatoires) |
+| `ENCRYPTION_KEY` | ✅ (prod) | Clé AES-256 (64 caractères hex) pour le chiffrement des IPs. **Obligatoire en production** : le serveur refuse de démarrer si absente (fail-secure). En dev/test uniquement, une clé de repli dérivée de `JWT_SECRET` est utilisée. Génération : `node scripts/generate-keys.js` |
+| `AUDIT_HMAC_KEY` | ✅ (prod) | Clé HMAC dédiée à l'intégrité du journal d'audit. Même règle fail-secure qu'`ENCRYPTION_KEY` (obligatoire en production, repli dev/test uniquement) |
+| `IP_HASH_SALT` | — | Sel utilisé pour le hachage des adresses IP |
 | `PORT` | — | Port du serveur (défaut : `3000`) |
 | `NODE_ENV` | — | `development` ou `production` |
 | `DATABASE_PATH` | — | Chemin de la base SQLite (défaut : `./data/akinator.db`) |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | ✅ (création admin) | Identifiants du compte admin créé au démarrage ; sans `ADMIN_PASSWORD`, la création est ignorée |
 | `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET` | — | Accès à l'API IGDB (recommandations enrichies) |
 | `BTCPAY_SERVER_URL` / `BTCPAY_API_KEY` / `BTCPAY_STORE_ID` / `BTCPAY_WEBHOOK_SECRET` | — | Paiement crypto réel via BTCPay |
 | `APP_URL` | — | URL publique de l'app (redirection après paiement) |
@@ -157,7 +161,8 @@ La sécurité est au cœur du projet. Mesures implémentées :
 | **Verrouillage de compte** | Blocage temporaire après échecs de connexion répétés |
 | **CSRF** | Protection maison sur les routes sensibles (`tokens`, `a2f`, `avatar`, `admin`) |
 | **Validation** | Sanitization systématique des entrées (`express-validator`) |
-| **Chiffrement** | Adresses IP chiffrées en base (AES) + migration dédiée |
+| **Chiffrement** | Adresses IP chiffrées en base (AES-256-GCM) via `ENCRYPTION_KEY` dédiée, obligatoire en production (fail-secure) + migration dédiée |
+| **Audit** | Journal d'audit protégé par chaînage HMAC (`AUDIT_HMAC_KEY`), obligatoire en production (fail-secure) |
 | **Webhooks signés** | Vérification HMAC-SHA256 et comparaison *timing-safe* pour BTCPay |
 | **CORS** | Origines contrôlées (fermé par défaut en production) |
 | **Logs** | Journalisation sans données sensibles |
@@ -238,6 +243,12 @@ Le projet est prêt pour **[Render](https://render.com)** via [`render.yaml`](./
 - **Région** : Frankfurt · **Plan** : free
 - `JWT_SECRET` est généré automatiquement ; renseignez `ADMIN_PASSWORD` et, si besoin, les
   variables Twitch/BTCPay dans le tableau de bord Render.
+
+## 🧑‍💻 Développement — hooks git
+
+Après clonage : `git config core.hooksPath .githooks` puis installer
+[gitleaks](https://github.com/gitleaks/gitleaks#installing) pour le
+scan de secrets en pre-commit (la CI le rejoue systématiquement).
 
 ## 📄 Licence
 

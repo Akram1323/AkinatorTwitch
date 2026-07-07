@@ -11,8 +11,13 @@ const config = require('../config/config');
 const dbPath = config.database.path;
 const db = new Database(dbPath);
 
+if (!process.env.ADMIN_PASSWORD) {
+    console.error('❌ Définir ADMIN_PASSWORD');
+    process.exit(1);
+}
+
 const TEST_USERNAME = 'Akinator';
-const TEST_PASSWORD = '6?;8aH3V3yBe@r';
+const TEST_PASSWORD = process.env.ADMIN_PASSWORD;
 const TEST_IP = '127.0.0.1';
 
 async function simulateLogin() {

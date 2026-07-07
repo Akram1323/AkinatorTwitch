@@ -129,8 +129,10 @@ function runFullCleanup() {
     
     const result1 = cleanupOldIPs();
     const result2 = cleanupOldIPsByCreationDate();
-    
-    const totalDeleted = result1.deleted + result2.deleted;
+    const purgedTokens = require('./tokenService').purgeExpiredTokens();
+    require('../middleware/csrf').cleanupExpiredTokens();
+
+    const totalDeleted = result1.deleted + result2.deleted + purgedTokens;
     
     console.log('\n═══════════════════════════════════════════════════════');
     console.log('📊 RÉSUMÉ DU NETTOYAGE');

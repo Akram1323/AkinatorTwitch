@@ -8,30 +8,68 @@
 
 const API = {
     baseUrl: '/api',
-    token: null,
     csrfToken: null,
+    // Refresh en vol partagé : évite que plusieurs requêtes en 401
+    // simultanées déclenchent chacune un /auth/refresh (le refresh token
+    // tourne à chaque appel ; un 2e appel avec le même cookie serait
+    // détecté comme réutilisation et révoquerait toute la famille).
+    refreshPromise: null,
 
     /**
-     * Configure le token d'authentification
+     * Appelé après un login/register/verify-a2f réussi : la session vit
+     * désormais dans les cookies httpOnly, il ne reste qu'à récupérer le
+     * token CSRF pour les futures requêtes mutantes.
      */
-    setToken(token) {
-        this.token = token;
-        if (token) {
-            localStorage.setItem('auth_token', token);
-            // Récupérer un token CSRF après authentification
-            this.refreshCSRFToken();
-        } else {
-            localStorage.removeItem('auth_token');
-            this.csrfToken = null;
+    async onLogin() {
+        await this.refreshCSRFToken();
+    },
+
+    /**
+     * Au chargement de la page : tente de restaurer la session depuis les
+     * cookies httpOnly (aucun token n'est stocké côté client).
+     * Retourne l'utilisateur si une session est active, sinon null.
+     */
+    async bootstrapSession() {
+        try {
+            const response = await this.get('/auth/me');
+            if (response.success) {
+                await this.refreshCSRFToken();
+                return response.data;
+            }
+        } catch (error) { /* pas de session active */ }
+        return null;
+    },
+
+    /**
+     * Rafraîchit la session (access token) via le refresh token httpOnly.
+     * Single-flight : si un refresh est déjà en cours, on réutilise la
+     * même promesse au lieu de déclencher un second appel réseau, sinon
+     * le refresh token (à usage unique, rotatif) serait détecté comme
+     * réutilisé et la famille entière de tokens serait révoquée.
+     * Retourne true si le refresh a réussi, false sinon.
+     */
+    async refreshSession() {
+        if (this.refreshPromise) {
+            return this.refreshPromise;
         }
+
+        this.refreshPromise = fetch(`${this.baseUrl}/auth/refresh`, {
+            method: 'POST',
+            credentials: 'same-origin'
+        })
+            .then(response => response.ok)
+            .catch(() => false)
+            .finally(() => {
+                this.refreshPromise = null;
+            });
+
+        return this.refreshPromise;
     },
 
     /**
      * Récupère un nouveau token CSRF
      */
     async refreshCSRFToken() {
-        if (!this.token) return;
-        
         try {
             const response = await this.get('/csrf-token');
             if (response.success) {
@@ -43,27 +81,15 @@ const API = {
     },
 
     /**
-     * Récupère le token depuis le localStorage
-     */
-    loadToken() {
-        this.token = localStorage.getItem('auth_token');
-        return this.token;
-    },
-
-    /**
      * Effectue une requête HTTP
      */
-    async request(endpoint, options = {}) {
+    async request(endpoint, options = {}, isRetry = false) {
         const url = `${this.baseUrl}${endpoint}`;
-        
+
         const headers = {
             'Content-Type': 'application/json',
             ...options.headers
         };
-
-        if (this.token) {
-            headers['Authorization'] = `Bearer ${this.token}`;
-        }
 
         // Ajouter le token CSRF pour les méthodes mutantes
         if (this.csrfToken && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method || 'GET')) {
@@ -73,8 +99,20 @@ const API = {
         try {
             const response = await fetch(url, {
                 ...options,
-                headers
+                headers,
+                credentials: 'same-origin' // cookies httpOnly
             });
+
+            // Access token expiré → tenter un refresh silencieux puis rejouer une fois.
+            // Le refresh est mutualisé (single-flight) : plusieurs requêtes en 401
+            // en même temps attendent toutes le même appel /auth/refresh au lieu
+            // d'en déclencher chacune un, ce qui casserait la rotation des tokens.
+            if (response.status === 401 && !isRetry && endpoint !== '/auth/refresh' && endpoint !== '/auth/login') {
+                const refreshed = await this.refreshSession();
+                if (refreshed) {
+                    return this.request(endpoint, options, true);
+                }
+            }
 
             let data;
             try {
@@ -120,16 +158,16 @@ const API = {
 
     async register(username, password, rgpdConsent = true) {
         const response = await this.post('/auth/register', { username, password, rgpdConsent });
-        if (response.success && response.data.token) {
-            this.setToken(response.data.token);
+        if (response.success) {
+            await this.onLogin();
         }
         return response;
     },
 
     async login(username, password) {
         const response = await this.post('/auth/login', { username, password });
-        if (response.success && response.data.token) {
-            this.setToken(response.data.token);
+        if (response.success && !response.requiresA2F) {
+            await this.onLogin();
         }
         return response;
     },
@@ -142,7 +180,7 @@ const API = {
         try {
             await this.post('/auth/logout', {});
         } catch (e) { /* non bloquant */ }
-        this.setToken(null);
+        this.csrfToken = null;
     },
 
     async linkWallet(walletAddress) {
@@ -158,14 +196,15 @@ const API = {
     },
 
     async verifyLoginA2F(code, tempToken) {
-        // Utiliser le tempToken dans le header Authorization
-        const oldToken = this.token;
-        this.token = tempToken;
-        const response = await this.post('/auth/verify-login-a2f', { code });
-        if (response.success && response.data.token) {
-            this.setToken(response.data.token);
-        } else {
-            this.token = oldToken; // Restaurer en cas d'erreur
+        // Le token temporaire A2F est court et mono-usage : il continue de
+        // transiter via le header Authorization (backend inchangé sur ce point).
+        const response = await this.request('/auth/verify-login-a2f', {
+            method: 'POST',
+            body: JSON.stringify({ code }),
+            headers: { 'Authorization': `Bearer ${tempToken}` }
+        });
+        if (response.success) {
+            await this.onLogin();
         }
         return response;
     },
@@ -200,15 +239,16 @@ const API = {
 
         const url = `${this.baseUrl}/avatar/upload`;
         const headers = {};
-        
-        if (this.token) {
-            headers['Authorization'] = `Bearer ${this.token}`;
+
+        if (this.csrfToken) {
+            headers['X-CSRF-Token'] = this.csrfToken;
         }
 
         const response = await fetch(url, {
             method: 'POST',
             headers,
-            body: formData
+            body: formData,
+            credentials: 'same-origin'
         });
 
         const data = await response.json();
@@ -348,6 +388,3 @@ const API = {
         return this.get('/health');
     }
 };
-
-// Charger le token au démarrage
-API.loadToken();

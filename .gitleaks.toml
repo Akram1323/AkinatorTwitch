@@ -1,0 +1,11 @@
+# Secret scanning — configuration gitleaks
+# Règles par défaut + exclusions locales
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fichiers de test et exemples"
+paths = [
+    '''AkinatorWeb/backend/tests/''',
+    '''AkinatorWeb/backend/env\.example\.txt''',
+]

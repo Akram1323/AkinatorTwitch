@@ -25,7 +25,9 @@ const helmetConfig = helmet({
             styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdnjs.cloudflare.com"],
             fontSrc: ["'self'", "https://fonts.gstatic.com", "https://cdnjs.cloudflare.com"],
             imgSrc: ["'self'", "data:", "https://images.igdb.com", "https:"],
-            connectSrc: ["'self'", "https://api.igdb.com", "https://polygon-rpc.com", "https://polygon-mainnet.g.alchemy.com"]
+            connectSrc: ["'self'", "https://api.igdb.com", "https://polygon-rpc.com", "https://polygon-mainnet.g.alchemy.com"],
+            'report-uri': ['/api/csp-report'],
+            'report-to': ['csp-endpoint']
         }
     },
     crossOriginEmbedderPolicy: false,
@@ -37,17 +39,36 @@ const helmetConfig = helmet({
 });
 
 /**
+ * Store optionnel Redis pour le rate-limiting multi-instance.
+ * Sans REDIS_URL : store mémoire par défaut (mono-instance).
+ */
+function buildLimiterStore(prefix) {
+    if (!process.env.REDIS_URL) return undefined;
+    const { RedisStore } = require('rate-limit-redis');
+    const Redis = require('ioredis');
+    if (!global.__redisClient) {
+        global.__redisClient = new Redis(process.env.REDIS_URL);
+        console.log('✅ Rate-limiting adossé à Redis');
+    }
+    return new RedisStore({
+        prefix: `rl:${prefix}:`,
+        sendCommand: (...args) => global.__redisClient.call(...args)
+    });
+}
+
+/**
  * Rate Limiter global
  */
 const globalLimiter = rateLimit({
     windowMs: config.security.rateLimitWindowMs,
-    max: config.security.rateLimitMaxRequests,
+    max: config.isTest ? 10000 : config.security.rateLimitMaxRequests,
     message: {
         success: false,
         error: 'Trop de requêtes, veuillez réessayer plus tard'
     },
     standardHeaders: true,
-    legacyHeaders: false
+    legacyHeaders: false,
+    store: buildLimiterStore('global')
 });
 
 /**
@@ -55,11 +76,12 @@ const globalLimiter = rateLimit({
  */
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 10, // 10 tentatives max par IP
+    max: config.isTest ? 10000 : 10, // 10 tentatives max par IP
     message: {
         success: false,
         error: 'Trop de tentatives de connexion, réessayez dans 15 minutes'
-    }
+    },
+    store: buildLimiterStore('auth')
 });
 
 /**
@@ -67,11 +89,25 @@ const authLimiter = rateLimit({
  */
 const registerLimiter = rateLimit({
     windowMs: 60 * 60 * 1000, // 1 heure
-    max: config.isDev ? 50 : 10, // 50 en dev, 10 en prod
+    max: config.isTest ? 10000 : (config.isDev ? 50 : 10), // 50 en dev, 10 en prod
     message: {
         success: false,
         error: 'Trop de tentatives d\'inscription, réessayez dans une heure'
-    }
+    },
+    store: buildLimiterStore('register')
+});
+
+/**
+ * Rate Limiter dédié à la vérification 2FA (anti brute-force sur 6 chiffres)
+ */
+const a2fLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: config.isTest ? 10000 : 5,
+    message: {
+        success: false,
+        error: 'Trop de tentatives de vérification 2FA, réessayez dans 15 minutes'
+    },
+    store: buildLimiterStore('a2f')
 });
 
 /**
@@ -79,19 +115,22 @@ const registerLimiter = rateLimit({
  */
 const paymentLimiter = rateLimit({
     windowMs: 60 * 1000, // 1 minute
-    max: 3, // 3 requêtes max
+    max: config.isTest ? 10000 : 3, // 3 requêtes max
     message: {
         success: false,
         error: 'Veuillez patienter avant de soumettre un nouveau paiement'
-    }
+    },
+    store: buildLimiterStore('payment')
 });
 
 /**
  * Middleware d'authentification JWT
  */
 const authenticateToken = (req, res, next) => {
+    // Priorité au cookie httpOnly ; header Authorization conservé en compat
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+    const token = (req.cookies && req.cookies.access_token)
+        || (authHeader && authHeader.split(' ')[1]);
 
     if (!token) {
         return res.status(401).json({
@@ -100,21 +139,20 @@ const authenticateToken = (req, res, next) => {
         });
     }
 
-    // Vérifier si le token est révoqué (blacklist)
     try {
-        const { tokenBlacklist } = require('../routes/auth');
-        if (tokenBlacklist && tokenBlacklist.has(token)) {
+        const decoded = jwt.verify(token, config.jwt.secret, {
+            algorithms: [config.jwt.algorithm]
+        });
+
+        // Blacklist persistante (révocation au logout)
+        const { isJtiRevoked } = require('../services/tokenService');
+        if (isJtiRevoked(decoded.jti)) {
             return res.status(401).json({
                 success: false,
                 error: 'Token révoqué, veuillez vous reconnecter'
             });
         }
-    } catch (e) { /* module pas encore chargé, on continue */ }
 
-    try {
-        const decoded = jwt.verify(token, config.jwt.secret, {
-            algorithms: [config.jwt.algorithm]
-        });
         req.user = decoded;
         next();
     } catch (err) {
@@ -136,11 +174,21 @@ const authenticateToken = (req, res, next) => {
  */
 const optionalAuth = (req, res, next) => {
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
+    const token = (req.cookies && req.cookies.access_token)
+        || (authHeader && authHeader.split(' ')[1]);
 
     if (token) {
         try {
-            req.user = jwt.verify(token, config.jwt.secret);
+            const decoded = jwt.verify(token, config.jwt.secret, {
+                algorithms: [config.jwt.algorithm]
+            });
+
+            // Blacklist persistante (révocation au logout) : un token révoqué
+            // ne doit pas être honoré, mais optionalAuth ne bloque jamais la requête.
+            const { isJtiRevoked } = require('../services/tokenService');
+            if (!isJtiRevoked(decoded.jti)) {
+                req.user = decoded;
+            }
         } catch (err) {
             // Token invalide, on continue sans user
         }
@@ -255,15 +303,28 @@ const securityLogger = (req, res, next) => {
     next();
 };
 
+/**
+ * En-têtes de sécurité additionnels (non couverts par Helmet)
+ * Permissions-Policy : désactive les APIs sensibles non utilisées
+ * Reporting-Endpoints : point de collecte des violations CSP (report-to)
+ */
+const extraHeaders = (req, res, next) => {
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+    res.setHeader('Reporting-Endpoints', 'csp-endpoint="/api/csp-report"');
+    next();
+};
+
 module.exports = {
     helmetConfig,
     globalLimiter,
     authLimiter,
     registerLimiter,
+    a2fLimiter,
     paymentLimiter,
     authenticateToken,
     optionalAuth,
     requireAdmin,
     sanitizeInput,
-    securityLogger
+    securityLogger,
+    extraHeaders
 };

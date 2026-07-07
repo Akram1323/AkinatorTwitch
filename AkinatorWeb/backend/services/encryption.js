@@ -14,19 +14,40 @@
 const crypto = require('crypto');
 const config = require('../config/config');
 
-// Clé de chiffrement dérivée du JWT_SECRET (ou générée)
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || deriveKeyFromJWTSecret();
+// Clé de chiffrement AES-256 (32 octets), attendue en hex (64 caractères)
+const ENCRYPTION_KEY = loadEncryptionKey();
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16; // 16 bytes pour AES
 const SALT_LENGTH = 64; // 64 bytes pour le salt
 const TAG_LENGTH = 16; // 16 bytes pour l'authentification tag
 
 /**
- * Dérive une clé de chiffrement depuis le JWT_SECRET si ENCRYPTION_KEY n'est pas définie
+ * Charge ENCRYPTION_KEY depuis l'environnement.
+ * - Production : obligatoire, 64 caractères hex, indépendante de JWT_SECRET → sinon arrêt.
+ * - Dev/test : fallback dérivé de JWT_SECRET (avec avertissement), pour ne pas bloquer.
  */
-function deriveKeyFromJWTSecret() {
-    const jwtSecret = config.jwt.secret;
-    return crypto.createHash('sha256').update(jwtSecret + 'encryption_salt').digest();
+function loadEncryptionKey() {
+    const raw = process.env.ENCRYPTION_KEY;
+    const isProd = process.env.NODE_ENV === 'production';
+
+    if (raw) {
+        if (!/^[0-9a-fA-F]{64}$/.test(raw)) {
+            console.error('❌ ENCRYPTION_KEY invalide : 64 caractères hexadécimaux attendus (32 octets).');
+            console.error('   Générer une clé : node scripts/generate-keys.js');
+            process.exit(1);
+        }
+        return Buffer.from(raw, 'hex');
+    }
+
+    if (isProd) {
+        console.error('❌ ENCRYPTION_KEY manquante en production.');
+        console.error('   Une clé dérivée de JWT_SECRET ferait qu\'une seule fuite compromet tout.');
+        console.error('   Générer une clé : node scripts/generate-keys.js');
+        process.exit(1);
+    }
+
+    console.warn('⚠️ ENCRYPTION_KEY absente : clé dérivée de JWT_SECRET (dev uniquement).');
+    return crypto.createHash('sha256').update(config.jwt.secret + 'encryption_salt').digest();
 }
 
 /**

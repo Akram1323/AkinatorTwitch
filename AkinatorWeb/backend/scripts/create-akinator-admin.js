@@ -8,8 +8,13 @@ const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const config = require('../config/config');
 
+if (!process.env.ADMIN_PASSWORD) {
+    console.error('❌ ADMIN_PASSWORD requis (variable d\'environnement).');
+    process.exit(1);
+}
+
 const username = 'Akinator';
-const password = '6?;8aH3V3yBe@r';
+const password = process.env.ADMIN_PASSWORD;
 const BCRYPT_ROUNDS = 12;
 
 const dbPath = config.database.path;
@@ -57,7 +62,7 @@ async function createAdmin() {
         console.log('');
         console.log('📋 Informations du compte:');
         console.log('   Username: Akinator');
-        console.log('   Mot de passe: 6?;8aH3V3yBe@r');
+        console.log('   Mot de passe: (défini via ADMIN_PASSWORD)');
         console.log('   ID: ' + userId);
         console.log('   Jetons: 3');
         console.log('   Admin: Oui');
