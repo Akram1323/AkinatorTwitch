@@ -51,6 +51,10 @@ function revokeFamily(familyId) {
     db.prepare('UPDATE refresh_tokens SET revoked = 1 WHERE family_id = ?').run(familyId);
 }
 
+function revokeAllUserFamilies(userId) {
+    db.prepare('UPDATE refresh_tokens SET revoked = 1 WHERE user_id = ?').run(userId);
+}
+
 function revokeFamilyByToken(presentedToken) {
     const row = db.prepare('SELECT family_id FROM refresh_tokens WHERE token_hash = ?')
         .get(hashToken(presentedToken));
@@ -99,6 +103,7 @@ module.exports = {
     issueTokenPair,
     rotateRefreshToken,
     revokeFamily,
+    revokeAllUserFamilies,
     revokeFamilyByToken,
     revokeAccessToken,
     isJtiRevoked,

@@ -160,6 +160,20 @@ const authenticateToken = (req, res, next) => {
             });
         }
 
+        // Invalidation globale au changement de mot de passe : tout access token
+        // émis avant `password_changed_at` (secondes Unix) n'est plus honoré.
+        // NB : granularité 1 s (iat en secondes) → un token émis dans la même
+        // seconde que le changement survit (`<` strict). Compromis assumé qui
+        // préserve la session courante ré-émise ; fenêtre ≤ 1 s vs TTL 15 min.
+        // NB : ce findById ajoute un SELECT (PK indexée) par requête authentifiée.
+        const account = queries.users.findById.get(decoded.id);
+        if (!account) {
+            return res.status(401).json({ success: false, error: 'Session invalide, veuillez vous reconnecter' });
+        }
+        if (account.password_changed_at && decoded.iat < account.password_changed_at) {
+            return res.status(401).json({ success: false, error: 'Session expirée par changement de mot de passe' });
+        }
+
         req.user = decoded;
         next();
     } catch (err) {
@@ -198,7 +212,10 @@ const optionalAuth = (req, res, next) => {
             // ne doit pas être honoré, mais optionalAuth ne bloque jamais la requête.
             const { isJtiRevoked } = require('../services/tokenService');
             if (!isJtiRevoked(decoded.jti)) {
-                req.user = decoded;
+                const account = queries.users.findById.get(decoded.id);
+                if (account && !(account.password_changed_at && decoded.iat < account.password_changed_at)) {
+                    req.user = decoded;
+                }
             }
         } catch (err) {
             // Token invalide, on continue sans user
