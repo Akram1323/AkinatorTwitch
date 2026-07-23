@@ -896,7 +896,15 @@ function displayUsers(users) {
         btnView.onclick = () => viewUserDetails(user.id);
         btnView.innerHTML = '<i class="fa-solid fa-eye"></i>';
         tdActions.appendChild(btnView);
-        
+
+        // Tokens button
+        const btnTokens = document.createElement('button');
+        btnTokens.className = 'btn btn-sm btn-accent';
+        btnTokens.title = 'Attribuer des jetons';
+        btnTokens.onclick = () => adjustUserTokens(user.id, user.username, user.tokens);
+        btnTokens.innerHTML = '<i class="fa-solid fa-coins"></i>';
+        tdActions.appendChild(btnTokens);
+
         // Promote button (if not admin)
         if (!user.is_admin) {
             const btnPromote = document.createElement('button');
@@ -970,7 +978,7 @@ async function deleteUser(userId, username) {
     if (!confirm(`⚠️ Supprimer définitivement l'utilisateur ${username} ?\n\nToutes ses données seront supprimées.`)) {
         return;
     }
-    
+
     try {
         await API.deleteAdminUser(userId);
         showToast(`Utilisateur ${username} supprimé`, 'success');
@@ -981,10 +989,43 @@ async function deleteUser(userId, username) {
     }
 }
 
+async function adjustUserTokens(userId, username, currentTokens) {
+    const input = prompt(
+        `Jetons de ${username} (solde actuel : ${currentTokens})\n\n` +
+        `Entrez un montant à AJOUTER (ex : 10, -2)\n` +
+        `ou "=N" pour FIXER le solde (ex : =50) :`
+    );
+    if (input === null) return;
+
+    const trimmed = input.trim();
+    const isSet = trimmed.startsWith('=');
+    const amount = parseInt(isSet ? trimmed.slice(1) : trimmed, 10);
+    if (isNaN(amount)) {
+        showToast('Montant invalide', 'error');
+        return;
+    }
+
+    const reason = prompt("Raison de l'attribution (obligatoire) :");
+    if (reason === null) return;
+    if (!reason.trim()) {
+        showToast('La raison est obligatoire', 'error');
+        return;
+    }
+
+    try {
+        const res = await API.setUserTokens(userId, isSet ? 'set' : 'add', amount, reason.trim());
+        showToast(res.message, 'success');
+        loadAdminData();
+    } catch (error) {
+        showToast(error.message || "Erreur lors de l'attribution", 'error');
+    }
+}
+
 // Exposer les fonctions globalement pour les boutons onclick
 window.viewUserDetails = viewUserDetails;
 window.promoteUser = promoteUser;
 window.deleteUser = deleteUser;
+window.adjustUserTokens = adjustUserTokens;
 
 // ══════════════════════════════════════════════════════════════
 // Modals

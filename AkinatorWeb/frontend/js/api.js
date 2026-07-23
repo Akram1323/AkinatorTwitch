@@ -336,6 +336,10 @@ const API = {
         return this.post(`/admin/users/${userId}/demote`, {});
     },
 
+    async setUserTokens(userId, action, amount, reason) {
+        return this.post(`/admin/users/${userId}/tokens`, { action, amount, reason });
+    },
+
     async cleanupIPs() {
         return this.get('/admin/cleanup-ips');
     },
