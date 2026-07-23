@@ -53,6 +53,9 @@ Chaque partie consomme **1 jeton** ; les jetons s'obtiennent via le **claim quot
 - 🛠️ **Panneau admin** — statistiques, gestion des utilisateurs (promotion/rétrogradation,
   déblocage de comptes) et **attribution de jetons** (ajout ou fixation d'un solde, avec raison
   obligatoire, tracée en transaction et au journal d'audit)
+- 📜 **Table « Attributions de crédits »** — journal des attributions de jetons (date, admin,
+  bénéficiaire, opération, solde avant/après, raison), alimentée par
+  `GET /api/admin/audit?event_type=`
 
 ## 🧰 Stack technique
 
@@ -213,7 +216,9 @@ Base : `/api`. 🔒 = authentification requise (JWT), 👑 = réservé aux admin
 
 ### Administration — `/api/admin` 👑
 Statistiques, gestion des utilisateurs (`GET/DELETE /users`, `promote`, `demote`, `unlock`) et
-attribution de jetons (`POST /users/:id/tokens`).
+attribution de jetons (`POST /users/:id/tokens`). Journal d'audit filtrable
+(`GET /audit?event_type=&limit=`), consommé par la table « Attributions de crédits » du panneau
+admin (filtre `event_type=admin.user.tokens`).
 
 ## 🪙 Jetons
 
