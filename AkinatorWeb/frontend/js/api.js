@@ -300,32 +300,12 @@ const API = {
         return this.get('/tokens/balance');
     },
 
-    async getTokenPrices() {
-        return this.get('/tokens/prices');
-    },
-
-    async purchaseTokens(packId, txHash = null) {
-        return this.post('/tokens/purchase', { packId, txHash });
-    },
-
-    async verifyTransaction(transactionId, txHash) {
-        return this.post('/tokens/verify', { transactionId, txHash });
-    },
-
     async getTransactions() {
         return this.get('/tokens/transactions');
     },
 
     async claimGift() {
         return this.post('/tokens/gift', { amount: 5 });
-    },
-
-    async createBTCPayInvoice(packId) {
-        return this.post('/tokens/btcpay/create', { packId });
-    },
-
-    async getBTCPayStatus(invoiceId) {
-        return this.get(`/tokens/btcpay/status/${encodeURIComponent(invoiceId)}`);
     },
 
     async claimDaily() {
@@ -362,18 +342,6 @@ const API = {
 
     async cleanupIPs() {
         return this.get('/admin/cleanup-ips');
-    },
-
-    async getPendingTransactions() {
-        return this.get('/admin/transactions/pending');
-    },
-
-    async approveTransaction(txId) {
-        return this.post(`/admin/transactions/${txId}/approve`, {});
-    },
-
-    async rejectTransaction(txId) {
-        return this.post(`/admin/transactions/${txId}/reject`, {});
     },
 
     async getLeaderboard() {
