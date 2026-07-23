@@ -174,6 +174,12 @@ async function startServer() {
         // Initialiser l'arbre de décision
         await initializeDecisionTree();
 
+        // Contrôle de cohérence arbre ↔ IGDB (non bloquant, nécessite les creds Twitch)
+        if (process.env.TWITCH_CLIENT_ID && process.env.TWITCH_CLIENT_SECRET) {
+            validateTreeSlugs().catch(err =>
+                console.warn('⚠️ Validation des slugs IGDB impossible:', err.message));
+        }
+
         // Créer le compte admin si absent (important pour les déploiements cloud)
         await ensureAdminAccount();
 
@@ -334,6 +340,26 @@ async function initializeDecisionTree() {
     console.log(`✅ Arbre de décision créé: ${total} nœuds`);
 }
 
+/**
+ * Vérifie que chaque slug de l'arbre est résoluble côté IGDB (statique puis
+ * dynamique). Warn uniquement — ne bloque jamais le démarrage.
+ */
+async function validateTreeSlugs() {
+    const { queries } = require('./services/database');
+    const { resolveFilters } = require('./services/igdbFilters');
+    const { resolveSlugDynamic } = require('./services/igdb');
+
+    const nodes = queries.tree.getAll.all().filter(n => n.slug_igdb);
+    const filters = nodes.map(n => ({ filterType: n.filter_type, slug: n.slug_igdb, text: n.question_text }));
+    const { ignored } = await resolveFilters(filters, resolveSlugDynamic);
+
+    if (ignored.length > 0) {
+        console.warn(`⚠️ Arbre de décision: ${ignored.length} slug(s) irrésoluble(s) côté IGDB — ces filtres seront ignorés en partie: ${[...new Set(ignored)].join(', ')}`);
+    } else {
+        console.log('✅ Arbre de décision: tous les slugs sont résolubles côté IGDB');
+    }
+}
+
 // Gestion propre de l'arrêt
 process.on('SIGINT', () => {
     console.log('\n👋 Arrêt du serveur...');
@@ -350,4 +376,4 @@ if (require.main === module) {
     startServer();
 }
 
-module.exports = { app };
+module.exports = { app, initializeDecisionTree, validateTreeSlugs };
