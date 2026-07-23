@@ -54,23 +54,6 @@ module.exports = {
         path: process.env.DATABASE_PATH || './data/akinator.db'
     },
 
-    // BTCPay Server (paiement crypto open-source)
-    btcpay: {
-        serverUrl: process.env.BTCPAY_SERVER_URL || '',        // ex: https://btcpay.monsite.com
-        apiKey: process.env.BTCPAY_API_KEY || '',              // Clé API du store BTCPay
-        storeId: process.env.BTCPAY_STORE_ID || '',            // ID du store BTCPay
-        webhookSecret: process.env.BTCPAY_WEBHOOK_SECRET || '', // Secret HMAC pour les webhooks
-        appUrl: process.env.APP_URL || 'http://localhost:3000'  // URL de redirection après paiement
-    },
-
-    // Crypto (legacy - adresses manuelles)
-    crypto: {
-        walletPrivateKey: process.env.WALLET_PRIVATE_KEY,
-        networkRpc: process.env.NETWORK_RPC || 'https://polygon-rpc.com',
-        tokenPriceWei: process.env.TOKEN_PRICE_WEI || '1000000000000000', // 0.001 ETH/MATIC
-        tokensPerPurchase: 10
-    },
-
     // Sécurité
     security: {
         rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,

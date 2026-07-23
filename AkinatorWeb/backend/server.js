@@ -56,13 +56,8 @@ app.use(extraHeaders);
 // CORS
 app.use(cors(config.cors));
 
-// Parser JSON - rawBody sauvegardé pour vérification signature webhook BTCPay (HMAC-SHA256)
-app.use(express.json({
-    limit: '1mb',
-    verify: (req, res, buf) => {
-        req.rawBody = buf;
-    }
-}));
+// Parser JSON
+app.use(express.json({ limit: '1mb' }));
 
 // Cookies httpOnly (access/refresh tokens)
 const cookieParser = require('cookie-parser');
@@ -118,11 +113,6 @@ app.get('/.well-known/security.txt', (req, res) => {
 // car elles nécessitent un token CSRF qui n'est disponible qu'après authentification
 app.use('/api/auth', authRoutes);
 app.use('/api/game', gameRoutes);
-
-// Webhook BTCPay : AVANT csrfProtection car il vient de BTCPay Server (pas d'un navigateur)
-// Authentifié par signature HMAC-SHA256 (voir services/btcpay.js)
-const { handleBTCPayWebhook } = require('./routes/tokens');
-app.post('/api/tokens/webhook/btcpay', handleBTCPayWebhook);
 
 app.use('/api/tokens', csrfProtection, tokenRoutes);
 app.use('/api/a2f', csrfProtection, a2fRoutes);
