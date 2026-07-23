@@ -15,4 +15,7 @@ paths = [
 # pour que la doc reste scannée contre de vrais secrets).
 regexes = [
     '''ci-secret-0123456789abcdef0123456789abcdef''',
+    # Faux positif : valeur d'exemple pour lancer le serveur en local, citée
+    # dans docs/superpowers/plans/ (jamais un vrai secret).
+    '''devsecret0123456789devsecret0123''',
 ]
