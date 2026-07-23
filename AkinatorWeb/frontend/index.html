@@ -32,9 +32,9 @@
             </div>
             
             <nav class="nav">
-                <!-- Bouton Boutique -->
+                <!-- Bouton Mes jetons -->
                 <button class="btn btn-ghost nav-btn" id="shopBtn">
-                    <i class="fa-solid fa-cart-shopping icon"></i> Boutique
+                    <i class="fa-solid fa-coins icon"></i> Mes jetons
                 </button>
                 
                 <!-- Affichage des jetons (connecté) -->
@@ -111,9 +111,9 @@
                 <button class="back-home-btn" id="backHomeBtn">← Retour à l'accueil</button>
                 
                 <div class="shop-header">
-                    <h1><i class="fa-solid fa-bag-shopping icon-title"></i> Boutique de Jetons</h1>
-                    <p>Achetez des jetons pour jouer plus de parties !</p>
-                    
+                    <h1><i class="fa-solid fa-coins icon-title"></i> Mes Jetons</h1>
+                    <p>Récupérez vos jetons quotidiens gratuits. Besoin de plus ? Contactez un administrateur.</p>
+
                     <div class="current-balance">
                         <span>Votre solde actuel :</span>
                         <span class="balance-amount" id="shopTokenBalance">0</span>
@@ -133,89 +133,6 @@
                             Récupérer
                         </button>
                     </div>
-                </div>
-
-                <!-- Packs de jetons -->
-                <h2 class="shop-subtitle">Packs de Jetons</h2>
-                <div class="token-packs-grid">
-                    <div class="shop-pack" data-pack="pack_10">
-                        <div class="pack-icon-sprite coin"></div>
-                        <div class="pack-amount">10 jetons</div>
-                        <div class="pack-price">~0.50€</div>
-                    </div>
-                    
-                    <div class="shop-pack popular" data-pack="pack_25">
-                        <div class="pack-badge"><i class="fa-solid fa-star icon-badge"></i> Populaire</div>
-                        <div class="pack-icon-sprite moneybag"></div>
-                        <div class="pack-amount">25 jetons</div>
-                        <div class="pack-price">~1€</div>
-                    </div>
-                    
-                    <div class="shop-pack" data-pack="pack_50">
-                        <div class="pack-icon-sprite chest"></div>
-                        <div class="pack-amount">50 jetons</div>
-                        <div class="pack-price">~1.80€</div>
-                    </div>
-                    
-                    <div class="shop-pack best-value" data-pack="pack_100">
-                        <div class="pack-badge"><i class="fa-solid fa-fire icon-badge"></i> Meilleur prix</div>
-                        <div class="pack-icon-sprite crown"></div>
-                        <div class="pack-amount">100 jetons</div>
-                        <div class="pack-price">~3€</div>
-                    </div>
-                </div>
-
-                <!-- Section paiement BTCPay -->
-                <div class="payment-section" id="paymentSection" style="display: none;">
-                    <h3 style="display:flex;align-items:center;gap:0.6rem;">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="26" height="26" style="flex-shrink:0;">
-                            <rect width="100" height="100" rx="18" fill="#F7931A"/>
-                            <path d="M68 44c1.2-8-4.9-12.3-13.3-15.2l2.7-10.8-6.6-1.6-2.6 10.6-5.3-1.3 2.6-10.6-6.6-1.6-2.7 10.8-13.3-3.3-1.8 7s4.9 1.1 4.8 1.2c2.7.7 3.2 2.5 3.1 3.9l-7.4 29.7c-.3 1.3-1.6 2.3-3.4 1.8 0 0-4.8-1.2-4.8-1.2L11 71l13 3.3-2.7 10.9 6.6 1.6 2.7-10.9 5.3 1.3-2.7 10.9 6.6 1.6 2.7-10.9c11.1 2.1 19.4.8 22.9-8.8 2.8-8-.1-12.6-5.9-15.6 4.2-1 7.3-3.7 8.5-9.4zM54 67.8c-2 8-15.4 3.7-19.7 2.6l3.5-14c4.4 1.1 18.4 3.3 16.2 11.4zm2-24.1c-1.8 7.2-13 4-16.7 3l3.2-12.8c3.7 1 15.5 2.5 13.5 9.8z" fill="white"/>
-                        </svg>
-                        Paiement BTCPay Server
-                    </h3>
-                    <p style="color:var(--text-secondary);margin:var(--spacing-sm) 0;font-size:0.88rem;">
-                        BTC · ETH · LTC et +50 cryptos · Vérification automatique · Open-source
-                    </p>
-
-                    <!-- Montant sélectionné -->
-                    <div style="text-align:center;margin:var(--spacing-md) 0;">
-                        <span id="btcpayAmountPreview" style="font-size:1.4rem;font-weight:700;color:var(--accent);"></span>
-                    </div>
-
-                    <!-- Bouton paiement -->
-                    <div id="btcpayCreateSection">
-                        <button class="btn btn-primary btn-full" id="createBTCPayInvoiceBtn">
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="18" height="18" style="margin-right:6px;vertical-align:middle;flex-shrink:0;">
-                                <rect width="100" height="100" rx="18" fill="rgba(255,255,255,0.9)"/>
-                                <path d="M68 44c1.2-8-4.9-12.3-13.3-15.2l2.7-10.8-6.6-1.6-2.6 10.6-5.3-1.3 2.6-10.6-6.6-1.6-2.7 10.8-13.3-3.3-1.8 7s4.9 1.1 4.8 1.2c2.7.7 3.2 2.5 3.1 3.9l-7.4 29.7c-.3 1.3-1.6 2.3-3.4 1.8 0 0-4.8-1.2-4.8-1.2L11 71l13 3.3-2.7 10.9 6.6 1.6 2.7-10.9 5.3 1.3-2.7 10.9 6.6 1.6 2.7-10.9c11.1 2.1 19.4.8 22.9-8.8 2.8-8-.1-12.6-5.9-15.6 4.2-1 7.3-3.7 8.5-9.4zM54 67.8c-2 8-15.4 3.7-19.7 2.6l3.5-14c4.4 1.1 18.4 3.3 16.2 11.4zm2-24.1c-1.8 7.2-13 4-16.7 3l3.2-12.8c3.7 1 15.5 2.5 13.5 9.8z" fill="#F7931A"/>
-                            </svg>
-                            Payer avec BTCPay
-                        </button>
-                    </div>
-
-                    <!-- Section invoice créée -->
-                    <div id="btcpayInvoiceSection" style="display:none;">
-                        <div class="payment-address-box" style="margin-top:var(--spacing-md);">
-                            <p style="color:var(--text-muted);font-size:0.78rem;margin-bottom:4px;">Invoice ID</p>
-                            <code id="btcpayInvoiceIdDisplay" style="font-size:0.78rem;word-break:break-all;"></code>
-                        </div>
-                        <a id="btcpayCheckoutLink" href="#" target="_blank" rel="noopener"
-                           class="btn btn-accent btn-full" style="margin-top:var(--spacing-md);display:none;">
-                            <i class="fa-solid fa-arrow-up-right-from-square icon"></i> Ouvrir le checkout BTCPay
-                        </a>
-                        <div style="margin-top:var(--spacing-md);padding:var(--spacing-md);border-radius:var(--radius-md);background:var(--bg-card);text-align:center;border:1px solid var(--border);">
-                            <div id="btcpaySpinner" style="margin-bottom:var(--spacing-sm);">
-                                <i class="fa-solid fa-circle-notch fa-spin" style="color:var(--accent);font-size:1.5rem;"></i>
-                            </div>
-                            <p id="btcpayStatusText" style="color:var(--text-secondary);margin:0;font-size:0.9rem;">En attente du paiement...</p>
-                        </div>
-                    </div>
-
-                    <p style="margin-top:var(--spacing-md);color:var(--text-muted);font-size:0.78rem;text-align:center;">
-                        <i class="fa-solid fa-shield-halved icon-sm"></i>
-                        Webhook signé HMAC-SHA256 · Aucune clé privée stockée côté serveur
-                    </p>
                 </div>
             </div>
         </section>
@@ -262,30 +179,6 @@
                         <button class="btn btn-primary" id="refreshUsersBtn">
                             <i class="fa-solid fa-arrows-rotate icon"></i> Actualiser la liste
                         </button>
-                    </div>
-                </div>
-
-                <!-- Transactions en attente -->
-                <div class="admin-transactions" id="adminTransactionsSection">
-                    <h2><i class="fa-solid fa-bitcoin-sign icon"></i> Transactions en attente</h2>
-                    <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:var(--spacing-md);">
-                        Adresse BTC de réception : <code style="font-size:0.8rem;word-break:break-all;">bc1qkm9qyw73f5n5fpj8etgytqczl3hjnafy6xrvs0</code>
-                    </p>
-                    <div class="users-table-container">
-                        <table class="users-table">
-                            <thead>
-                                <tr>
-                                    <th>Utilisateur</th>
-                                    <th>Jetons</th>
-                                    <th>Invoice ID</th>
-                                    <th>Date</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="pendingTransactionsBody">
-                                <tr><td colspan="5" style="text-align:center;padding:2rem;">Chargement...</td></tr>
-                            </tbody>
-                        </table>
                     </div>
                 </div>
 
@@ -553,7 +446,7 @@
 
                 <div class="profile-actions">
                     <button class="btn btn-primary btn-full" id="goToShopFromProfile">
-                        <i class="fa-solid fa-cart-shopping icon"></i> Acheter des jetons
+                        <i class="fa-solid fa-coins icon"></i> Obtenir des jetons
                     </button>
                 </div>
             </div>
@@ -747,7 +640,6 @@
 
     <!-- Scripts -->
     <script src="js/api.js"></script>
-    <script src="js/wallet.js"></script>
     <script src="js/game.js"></script>
     <script src="js/app.js"></script>
 </body>

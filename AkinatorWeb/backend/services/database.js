@@ -93,7 +93,7 @@ function initializeTables() {
         CREATE TABLE IF NOT EXISTS transactions (
             id TEXT PRIMARY KEY,
             user_id TEXT NOT NULL,
-            type TEXT NOT NULL CHECK(type IN ('purchase', 'gift', 'daily', 'game')),
+            type TEXT NOT NULL CHECK(type IN ('purchase', 'gift', 'daily', 'game', 'admin_grant')),
             amount INTEGER NOT NULL,
             tx_hash TEXT,
             status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'completed', 'failed')),
@@ -101,6 +101,30 @@ function initializeTables() {
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
     `);
+
+    // Migration : le CHECK de transactions.type n'inclut pas 'admin_grant' sur
+    // les bases existantes et SQLite ne modifie pas un CHECK — rebuild de la table.
+    const txTable = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'transactions'").get();
+    if (txTable && !txTable.sql.includes('admin_grant')) {
+        db.exec(`
+            DROP TABLE IF EXISTS transactions_new;
+            BEGIN;
+            CREATE TABLE transactions_new (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                type TEXT NOT NULL CHECK(type IN ('purchase', 'gift', 'daily', 'game', 'admin_grant')),
+                amount INTEGER NOT NULL,
+                tx_hash TEXT,
+                status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'completed', 'failed')),
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+            INSERT INTO transactions_new SELECT * FROM transactions;
+            DROP TABLE transactions;
+            ALTER TABLE transactions_new RENAME TO transactions;
+            COMMIT;
+        `);
+    }
 
     // Table des parties
     db.exec(`
@@ -239,7 +263,6 @@ function initializeQueries() {
         `),
         findById: db.prepare('SELECT * FROM users WHERE id = ?'),
         findByUsername: db.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE'),
-        findByWallet: db.prepare('SELECT * FROM users WHERE wallet_address = ?'),
         updateTokens: db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?'),
         setTokens: db.prepare('UPDATE users SET tokens = ? WHERE id = ?'),
         updateLastLogin: db.prepare(`
@@ -251,7 +274,6 @@ function initializeQueries() {
             WHERE id = ?
         `),
         incrementGames: db.prepare('UPDATE users SET total_games = total_games + 1 WHERE id = ?'),
-        linkWallet: db.prepare('UPDATE users SET wallet_address = ? WHERE id = ?'),
         incrementFailedLogin: db.prepare(`
             UPDATE users SET 
                 failed_login_attempts = failed_login_attempts + 1,

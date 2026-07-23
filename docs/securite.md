@@ -19,7 +19,7 @@ défense cohérente sur trois axes : **authentification**, **traçabilité**,
 | **Politique de mot de passe** | `express-validator` + `passwordService` | Refuse les mots de passe faibles. |
 | **Helmet + CSP** | Scripts sans `unsafe-inline`, HSTS preload | Réduit la surface XSS et force HTTPS. |
 | **Sanitization des entrées** | Nettoyage récursif, **hors champs sensibles** | Filtre les payloads dangereux **sans** corrompre mots de passe / codes 2FA avant hachage. |
-| **Rate limiting différencié** | global / login (anti-brute-force) / register / 2FA / paiement | Limite l'abus par catégorie de risque. Store Redis optionnel (multi-instance). |
+| **Rate limiting différencié** | global / login (anti-brute-force) / register / 2FA | Limite l'abus par catégorie de risque. Store Redis optionnel (multi-instance). |
 | **Verrouillage de compte** | 15 min après 5 échecs (`locked_until`) | Ralentit le credential stuffing ciblé. |
 | **CORS** | Origines contrôlées, fermé par défaut en prod | Empêche l'usage cross-origin non autorisé. |
 
@@ -62,7 +62,8 @@ Table `audit_log` **append-only** à **chaînage HMAC** :
   (suppression des dernières lignes) sans ancrage externe.
 
 *Pourquoi ça compte :* traçabilité, forensics, non-répudiation sur les
-événements sensibles (login, changement de rôle, actions admin, paiements).
+événements sensibles (login, changement de rôle, actions admin, attribution de
+jetons).
 
 ## Données personnelles (RGPD)
 
@@ -85,12 +86,14 @@ Quatre secrets **indépendants** (la fuite de l'un n'affecte pas les autres) :
   `scripts/rotate-encryption-key.js`.
 - Aucun secret dans le dépôt : **gitleaks** en pre-commit + CI.
 
-## Paiement crypto
+## Attribution de jetons
 
-Webhook BTCPay authentifié par **signature HMAC-SHA256**, comparaison
-**timing-safe** ([`btcpay.js`](../AkinatorWeb/backend/services/btcpay.js)). Le
-webhook est monté **avant** la protection CSRF (il ne vient pas d'un
-navigateur). Mode manuel possible avec **validation par un administrateur**.
+Aucun paiement : les jetons s'obtiennent par le **claim quotidien** ou par
+**attribution d'un administrateur** (`POST /api/admin/users/:id/tokens`,
+`requireAdmin` + CSRF). La raison est **obligatoire** (≤ 200 caractères), le
+solde final ne peut pas être négatif, et l'opération est tracée à la fois
+comme transaction (`admin_grant`) et dans le journal d'audit
+(`admin.user.tokens`) — non-répudiation de qui a crédité quoi et pourquoi.
 
 ## Upload d'avatar durci
 

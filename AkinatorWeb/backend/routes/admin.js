@@ -12,6 +12,7 @@ const { authenticateToken, requireAdmin } = require('../middleware/security');
 const { queries } = require('../services/database');
 const { decryptIP } = require('../services/encryption');
 const { appendAudit, verifyAuditChain } = require('../services/auditService');
+const { v4: uuidv4 } = require('uuid');
 
 const router = express.Router();
 
@@ -186,50 +187,88 @@ router.delete('/users/:id', async (req, res) => {
 
 /**
  * POST /api/admin/users/:id/tokens
- * Modifier les jetons d'un utilisateur
+ * Attribue des jetons à un utilisateur.
+ * Body : { action: 'add'|'set', amount: entier, reason: string obligatoire }
+ * 'add' incrémente le solde (voie normale), 'set' fixe une valeur absolue
+ * (correction exceptionnelle). Trace une transaction 'admin_grant' (delta).
  */
 router.post('/users/:id/tokens', async (req, res) => {
     try {
-        // Vérifier d'abord que l'utilisateur existe
         const user = queries.users.findById.get(req.params.id);
-        
+
         if (!user) {
             return res.status(404).json({
                 success: false,
                 error: 'Utilisateur introuvable'
             });
         }
-        
-        const { amount } = req.body;
-        
-        // Validation stricte du montant
-        if (typeof amount !== 'number' || isNaN(amount) || !Number.isInteger(amount) || amount < 0) {
+
+        const { action, amount, reason } = req.body;
+
+        if (!['add', 'set'].includes(action)) {
             return res.status(400).json({
                 success: false,
-                error: 'Montant invalide (doit être un entier positif)'
+                error: "Action invalide (attendu : 'add' ou 'set')"
             });
         }
-        
-        // Logger l'action pour audit
-        console.log(`🔧 Admin ${req.user.username} modifie les jetons de ${user.username}: ${user.tokens} -> ${amount}`);
-        
-        queries.users.setTokens.run(amount, req.params.id);
 
-        appendAudit('admin.user.tokens', { userId: req.user.id, details: { targetId: req.params.id, amount } });
+        if (typeof amount !== 'number' || !Number.isSafeInteger(amount) || Math.abs(amount) > 1000000) {
+            return res.status(400).json({
+                success: false,
+                error: 'Montant invalide (entier, maximum 1 000 000 en valeur absolue)'
+            });
+        }
+
+        if (typeof reason !== 'string' || reason.trim().length === 0 || reason.trim().length > 200) {
+            return res.status(400).json({
+                success: false,
+                error: 'Raison obligatoire (200 caractères max)'
+            });
+        }
+
+        const oldBalance = user.tokens;
+        const newBalance = action === 'add' ? oldBalance + amount : amount;
+
+        if (newBalance < 0) {
+            return res.status(400).json({
+                success: false,
+                error: `Solde final négatif refusé (solde actuel : ${oldBalance})`
+            });
+        }
+
+        const db = require('../services/database').db;
+        db.transaction(() => {
+            if (action === 'add') {
+                queries.users.updateTokens.run(amount, req.params.id);
+            } else {
+                queries.users.setTokens.run(amount, req.params.id);
+            }
+            queries.transactions.create.run(
+                uuidv4(), req.params.id, 'admin_grant', newBalance - oldBalance, null, 'completed'
+            );
+        })();
+
+        console.log(`🔧 Admin ${req.user.username} attribue des jetons à ${user.username}: ${oldBalance} -> ${newBalance} (${action}, ${reason.trim()})`);
+
+        appendAudit('admin.user.tokens', {
+            userId: req.user.id,
+            details: { targetId: req.params.id, action, amount, reason: reason.trim() }
+        });
 
         res.json({
             success: true,
-            message: `Jetons de ${user.username} mis à jour: ${amount}`,
+            message: `Jetons de ${user.username} : ${oldBalance} → ${newBalance}`,
             data: {
                 userId: req.params.id,
-                tokens: amount
+                oldBalance,
+                newBalance
             }
         });
     } catch (error) {
-        console.error('❌ Erreur modification jetons:', error);
+        console.error('❌ Erreur attribution jetons:', error);
         res.status(500).json({
             success: false,
-            error: 'Erreur lors de la modification'
+            error: "Erreur lors de l'attribution"
         });
     }
 });
@@ -353,79 +392,6 @@ router.post('/users/:id/unlock', async (req, res) => {
             success: false,
             error: 'Erreur lors du déverrouillage'
         });
-    }
-});
-
-/**
- * GET /api/admin/transactions/pending
- * Liste les transactions en attente (achats BTCPay)
- */
-router.get('/transactions/pending', async (req, res) => {
-    try {
-        const db = require('../services/database').db;
-        const pending = db.prepare(`
-            SELECT t.*, u.username
-            FROM transactions t
-            JOIN users u ON t.user_id = u.id
-            WHERE t.status = 'pending' AND t.type = 'purchase'
-            ORDER BY t.created_at DESC
-            LIMIT 50
-        `).all();
-
-        res.json({ success: true, data: pending });
-    } catch (error) {
-        console.error('❌ Erreur transactions pending:', error);
-        res.status(500).json({ success: false, error: 'Erreur lors de la récupération' });
-    }
-});
-
-/**
- * POST /api/admin/transactions/:id/approve
- * Approuver manuellement une transaction (crédite les jetons)
- */
-router.post('/transactions/:id/approve', async (req, res) => {
-    try {
-        const tx = queries.transactions.findById.get(req.params.id);
-        if (!tx) return res.status(404).json({ success: false, error: 'Transaction introuvable' });
-        if (tx.status !== 'pending') return res.status(400).json({ success: false, error: 'Transaction déjà traitée' });
-
-        const db = require('../services/database').db;
-        db.transaction(() => {
-            queries.transactions.updateStatus.run('completed', tx.id);
-            queries.users.updateTokens.run(tx.amount, tx.user_id);
-        })();
-
-        console.log(`✅ Admin ${req.user.username} approuve transaction ${tx.id} (+${tx.amount} jetons)`);
-
-        appendAudit('admin.tx.approve', { userId: req.user.id, details: { txId: tx.id } });
-
-        res.json({ success: true, message: `Transaction approuvée: +${tx.amount} jetons crédités` });
-    } catch (error) {
-        console.error('❌ Erreur approbation:', error);
-        res.status(500).json({ success: false, error: 'Erreur lors de l\'approbation' });
-    }
-});
-
-/**
- * POST /api/admin/transactions/:id/reject
- * Rejeter une transaction
- */
-router.post('/transactions/:id/reject', async (req, res) => {
-    try {
-        const tx = queries.transactions.findById.get(req.params.id);
-        if (!tx) return res.status(404).json({ success: false, error: 'Transaction introuvable' });
-        if (tx.status !== 'pending') return res.status(400).json({ success: false, error: 'Transaction déjà traitée' });
-
-        queries.transactions.updateStatus.run('failed', tx.id);
-
-        console.log(`❌ Admin ${req.user.username} rejette transaction ${tx.id}`);
-
-        appendAudit('admin.tx.reject', { userId: req.user.id, details: { txId: tx.id } });
-
-        res.json({ success: true, message: 'Transaction rejetée' });
-    } catch (error) {
-        console.error('❌ Erreur rejet:', error);
-        res.status(500).json({ success: false, error: 'Erreur lors du rejet' });
     }
 });
 

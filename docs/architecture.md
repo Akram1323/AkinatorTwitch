@@ -35,7 +35,7 @@ d'atteindre une route.
 1. **`helmetConfig`** — en-têtes de sécurité + CSP (scripts sans `unsafe-inline`, HSTS preload).
 2. **`extraHeaders`** — `Permissions-Policy` et `Reporting-Endpoints` (report-to CSP).
 3. **`cors`** — origines contrôlées (fermé par défaut en production).
-4. **`express.json`** (limite 1 Mo) — capture aussi `req.rawBody` pour la vérif HMAC du webhook BTCPay.
+4. **`express.json`** (limite 1 Mo) — parsing du corps des requêtes.
 5. **`cookieParser`** — lit les cookies httpOnly `access_token` / `refresh_token`.
 6. **`globalLimiter`** — rate limiting global (store Redis si `REDIS_URL`, sinon mémoire).
 7. **`sanitizeInput`** — nettoyage récursif des entrées, **hors champs sensibles** (mots de passe, codes 2FA — sinon on corromprait les secrets avant hachage).
@@ -49,21 +49,20 @@ Points d'attention dans `server.js` :
 
 - `GET /api/csrf-token` exige `authenticateToken` : le token CSRF n'est délivré qu'à un utilisateur authentifié.
 - `csrfProtection` est appliqué aux routers **`tokens`, `a2f`, `avatar`, `admin`** — pas à `auth` ni `game` (login/register n'ont pas encore de token CSRF ; `game` est majoritairement public).
-- Deux routes contournent volontairement le CSRF car elles ne viennent pas d'un navigateur avec session :
-  - `POST /api/tokens/webhook/btcpay` — authentifié par **signature HMAC-SHA256** (monté *avant* `csrfProtection`).
-  - `POST /api/csp-report` — rapports de violation CSP envoyés directement par le navigateur.
+- `POST /api/csp-report` contourne volontairement le CSRF : rapports de violation CSP envoyés
+  directement par le navigateur, pas depuis une session applicative.
 - `GET /.well-known/security.txt` — politique de divulgation (RFC 9116).
 
 ## Routers (`routes/`)
 
 | Router | Préfixe | Auth | Responsabilité |
 |--------|---------|------|----------------|
-| `auth.js` | `/api/auth` | mixte | Inscription, connexion, 2FA à la connexion, refresh, logout, mot de passe, wallet. Voir [authentification.md](./authentification.md). |
+| `auth.js` | `/api/auth` | mixte | Inscription, connexion, 2FA à la connexion, refresh, logout, mot de passe, claim quotidien. Voir [authentification.md](./authentification.md). |
 | `game.js` | `/api/game` | mixte (`optionalAuth`) | Arbre de décision, démarrage de partie (consomme 1 jeton), recommandations IGDB, historique, leaderboard. |
-| `tokens.js` | `/api/tokens` | 🔒 + CSRF | Solde, prix des packs, achat, vérification, transactions, webhook BTCPay. |
+| `tokens.js` | `/api/tokens` | 🔒 + CSRF | Solde, historique des transactions, gift quotidien. |
 | `a2f.js` | `/api/a2f` | 🔒 + CSRF | Cycle de vie du 2FA TOTP : setup, verify-setup, verify, disable, backup-codes, status. |
 | `avatar.js` | `/api/avatar` | 🔒 + CSRF | Upload (multer+sharp, re-encode WebP) et suppression d'avatar. |
-| `admin.js` | `/api/admin` | 👑 + CSRF | Stats, gestion utilisateurs (promote/demote/unlock/delete/crédit), validation de transactions, consultation + vérification du journal d'audit. |
+| `admin.js` | `/api/admin` | 👑 + CSRF | Stats, gestion utilisateurs (promote/demote/unlock/delete), attribution de jetons (`users/:id/tokens`), consultation + vérification du journal d'audit. |
 
 🔒 = `authenticateToken` · 👑 = `requireAdmin` (après `authenticateToken`).
 
@@ -77,7 +76,6 @@ Points d'attention dans `server.js` :
 | `encryption.js` | AES-256-GCM pour chiffrer les IP en base + SHA-256 pour hacher les IP dans les logs (RGPD). |
 | `passwordService.js` | Politique de mot de passe (validation, force). |
 | `twoFactor.js` | TOTP (speakeasy) : génération de secret, QR, vérification, anti-rejeu (`a2f_last_step`). |
-| `btcpay.js` | Client BTCPay Server : création d'invoice, vérification de signature webhook (HMAC timing-safe). |
 | `igdb.js` / `igdbService.js` | Accès à l'API IGDB (jeux, jaquettes), avec cache SQLite. |
 | `cleanup.js` | Purges programmées : IP anciennes (RGPD), tokens expirés, CSRF expirés. |
 
@@ -91,7 +89,7 @@ existe déjà »).
 | Table | Rôle | Points de sécurité |
 |-------|------|--------------------|
 | `users` | Comptes | `password_hash` (bcrypt), `a2f_secret`, `a2f_last_step` (anti-rejeu TOTP), `password_changed_at` (invalidation de session), `failed_login_attempts`/`locked_until` (verrouillage), `ip_address` chiffrée. |
-| `transactions` | Achats/gifts/daily/parties | `status` contraint (`pending`/`completed`/`failed`). |
+| `transactions` | Gifts/daily/parties/attributions admin (`admin_grant`) | `status` contraint (`pending`/`completed`/`failed`). |
 | `games` | Parties jouées | Filtres + recommandations sérialisés. |
 | `decision_tree` | Arbre Akinator | Nœuds (genre → plateforme → thème → mode). Peuplé au 1er démarrage. |
 | `igdb_cache` | Cache IGDB | TTL 1 h. |
@@ -106,13 +104,13 @@ Pragmas SQLite : `journal_mode=WAL`, `foreign_keys=ON`, `secure_delete=ON`.
 
 ## Cycle de vie d'une requête authentifiée (exemple)
 
-`POST /api/tokens/purchase` :
+`POST /api/admin/users/:id/tokens` :
 
 1. Pipeline global (helmet → cors → json → cookies → rate limit → sanitize → logger).
-2. `csrfProtection` (routeur `tokens`) valide le token CSRF.
-3. `authenticateToken` : lit `access_token` (cookie, sinon header `Authorization`), vérifie le JWT, rejette si `pending2FA`, si `jti` révoqué, ou si le token est antérieur à `password_changed_at`. Injecte `req.user`.
+2. `csrfProtection` (routeur `admin`) valide le token CSRF.
+3. `authenticateToken` puis `requireAdmin` : lit `access_token` (cookie, sinon header `Authorization`), vérifie le JWT, rejette si `pending2FA`, si `jti` révoqué, ou si le token est antérieur à `password_changed_at` ; puis vérifie `is_admin`. Injecte `req.user`.
 4. Le handler exécute la logique métier via `queries` (requêtes préparées).
-5. Les mutations sensibles appellent `appendAudit(...)` pour tracer l'événement.
+5. Les mutations sensibles appellent `appendAudit(...)` pour tracer l'événement (ici `admin.user.tokens`).
 
 ## Démarrage (`startServer`)
 
