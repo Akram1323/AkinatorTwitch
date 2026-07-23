@@ -293,7 +293,6 @@ router.post('/login',
                         username: user.username,
                         tokens: user.tokens,
                         totalGames: user.total_games,
-                        walletAddress: user.wallet_address,
                         avatarUrl: user.avatar_url,
                         a2fEnabled: user.a2f_enabled === 1,
                         isAdmin: user.is_admin === 1,
@@ -342,7 +341,6 @@ router.get('/me', authenticateToken, (req, res) => {
                 username: user.username,
                 tokens: user.tokens,
                 totalGames: user.total_games,
-                walletAddress: user.wallet_address,
                 avatarUrl: user.avatar_url,
                 a2fEnabled: user.a2f_enabled === 1,
                 isAdmin: user.is_admin === 1,
@@ -527,7 +525,6 @@ router.post('/verify-login-a2f',
                         username: user.username,
                         tokens: user.tokens,
                         totalGames: user.total_games,
-                        walletAddress: user.wallet_address,
                         avatarUrl: user.avatar_url,
                         a2fEnabled: true,
                         canClaimDaily
@@ -540,71 +537,6 @@ router.post('/verify-login-a2f',
             res.status(500).json({
                 success: false,
                 error: 'Erreur de vérification'
-            });
-        }
-    }
-);
-
-/**
- * POST /api/auth/link-wallet
- * Associe une adresse wallet à un compte
- */
-router.post('/link-wallet',
-    authenticateToken,
-    [
-        body('walletAddress')
-            .matches(/^0x[a-fA-F0-9]{40}$/)
-            .withMessage('Adresse wallet invalide')
-    ],
-    (req, res) => {
-        try {
-            const errors = validationResult(req);
-            if (!errors.isEmpty()) {
-                return res.status(400).json({
-                    success: false,
-                    error: errors.array()[0].msg
-                });
-            }
-
-            const { walletAddress } = req.body;
-
-            // Récupérer l'utilisateur actuel
-            const user = queries.users.findById.get(req.user.id);
-            if (!user) {
-                return res.status(404).json({
-                    success: false,
-                    error: 'Utilisateur non trouvé'
-                });
-            }
-
-            // Vérifier si le wallet est déjà associé à un autre compte
-            const existing = queries.users.findByWallet.get(walletAddress);
-            if (existing && existing.id !== req.user.id) {
-                return res.status(409).json({
-                    success: false,
-                    error: 'Ce wallet est déjà associé à un autre compte'
-                });
-            }
-
-            // Si l'utilisateur a déjà un wallet, logger le changement pour audit
-            if (user.wallet_address && user.wallet_address !== walletAddress) {
-                console.log(`⚠️ Changement de wallet: ${req.user.username} - Ancien: ${user.wallet_address} -> Nouveau: ${walletAddress}`);
-            }
-
-            queries.users.linkWallet.run(walletAddress, req.user.id);
-
-            console.log(`🔗 Wallet lié: ${req.user.username} -> ${walletAddress}`);
-
-            res.json({
-                success: true,
-                message: 'Wallet associé avec succès'
-            });
-
-        } catch (error) {
-            console.error('Erreur link-wallet:', error);
-            res.status(500).json({
-                success: false,
-                error: 'Erreur lors de l\'association du wallet'
             });
         }
     }

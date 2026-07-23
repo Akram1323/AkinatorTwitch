@@ -183,10 +183,6 @@ const API = {
         this.csrfToken = null;
     },
 
-    async linkWallet(walletAddress) {
-        return this.post('/auth/link-wallet', { walletAddress });
-    },
-
     async changePassword(currentPassword, newPassword, a2fCode) {
         return this.post('/auth/change-password', { currentPassword, newPassword, a2fCode });
     },

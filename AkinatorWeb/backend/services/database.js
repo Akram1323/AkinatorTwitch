@@ -260,7 +260,6 @@ function initializeQueries() {
         `),
         findById: db.prepare('SELECT * FROM users WHERE id = ?'),
         findByUsername: db.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE'),
-        findByWallet: db.prepare('SELECT * FROM users WHERE wallet_address = ?'),
         updateTokens: db.prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?'),
         setTokens: db.prepare('UPDATE users SET tokens = ? WHERE id = ?'),
         updateLastLogin: db.prepare(`
@@ -272,7 +271,6 @@ function initializeQueries() {
             WHERE id = ?
         `),
         incrementGames: db.prepare('UPDATE users SET total_games = total_games + 1 WHERE id = ?'),
-        linkWallet: db.prepare('UPDATE users SET wallet_address = ? WHERE id = ?'),
         incrementFailedLogin: db.prepare(`
             UPDATE users SET 
                 failed_login_attempts = failed_login_attempts + 1,
