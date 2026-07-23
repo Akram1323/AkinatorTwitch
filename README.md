@@ -1,6 +1,6 @@
 # 🎮 Akinator Twitch Web
 
-> Application web de recommandation de jeux vidéo façon « Akinator », avec système de jetons et paiement crypto.
+> Application web de recommandation de jeux vidéo façon « Akinator », avec système de jetons.
 > Projet pédagogique développé dans le cadre d'un **Master Cybersécurité**, avec un fort accent sur la sécurité applicative.
 
 ![Node](https://img.shields.io/badge/Node.js-20.11-339933?logo=node.js&logoColor=white)
@@ -20,7 +20,7 @@
 - [Configuration (`.env`)](#-configuration-env)
 - [Sécurité](#-sécurité)
 - [API](#-api)
-- [Paiement crypto](#-paiement-crypto)
+- [Jetons](#-jetons)
 - [Déploiement](#-déploiement)
 - [Licence](#-licence)
 
@@ -30,8 +30,8 @@
 
 L'utilisateur répond à une série de questions (arbre de décision). L'application en déduit un
 type de jeu et propose des recommandations enrichies via la base de données **IGDB** (Twitch).
-Chaque partie consomme **1 jeton** ; les jetons s'obtiennent gratuitement (claim quotidien / cadeau
-de démo) ou par **achat en crypto**.
+Chaque partie consomme **1 jeton** ; les jetons s'obtiennent via le **claim quotidien** ou par
+**attribution d'un administrateur**.
 
 ## ✨ Fonctionnalités
 
@@ -49,14 +49,10 @@ de démo) ou par **achat en crypto**.
 - 🔑 **Mot de passe** — changement et réinitialisation
 - 🛡️ **2FA / A2F (TOTP)** — activation via QR code (compatible Google Authenticator, etc.)
 
-### Paiement
-- 💰 **Achat de jetons en crypto** (BTC / ETH) par packs
-- 🧾 **BTCPay Server** — génération d'invoices et validation par webhook signé (HMAC)
-- 👛 **Liaison de wallet** (Web3 / MetaMask)
-
 ### Administration
 - 🛠️ **Panneau admin** — statistiques, gestion des utilisateurs (promotion/rétrogradation,
-  crédit de jetons, déblocage de comptes) et **validation manuelle des transactions**
+  déblocage de comptes) et **attribution de jetons** (ajout ou fixation d'un solde, avec raison
+  obligatoire, tracée en transaction et au journal d'audit)
 
 ## 🧰 Stack technique
 
@@ -68,7 +64,6 @@ de démo) ou par **achat en crypto**.
 | **Auth & sécurité** | `jsonwebtoken`, `bcrypt`, `helmet`, `express-rate-limit`, `express-validator`, CSRF maison, chiffrement AES maison |
 | **2FA** | `speakeasy` (TOTP) + `qrcode` |
 | **Média** | `multer`, `sharp` |
-| **Crypto / paiement** | BTCPay Server (`axios`), `ethers` (Web3) |
 | **Frontend** | HTML / CSS / JavaScript vanilla (pas de framework) |
 
 ## 🏗️ Architecture
@@ -80,7 +75,7 @@ AkinatorWeb/
 │   ├── config/config.js        # Configuration centralisée (env)
 │   ├── routes/                 # auth, game, tokens, a2f, avatar, admin
 │   ├── middleware/             # security.js (JWT, rate limit…), csrf.js
-│   ├── services/               # igdb, btcpay, database, encryption, cleanup
+│   ├── services/               # igdb, database, encryption, cleanup
 │   ├── migrations/             # évolutions du schéma SQLite
 │   ├── scripts/                # outils d'admin / diagnostic
 │   └── data/akinator.db        # base SQLite (générée)
@@ -88,7 +83,7 @@ AkinatorWeb/
 ├── frontend/                   # Interface utilisateur (statique)
 │   ├── index.html
 │   ├── css/style.css
-│   └── js/                     # api.js, wallet.js, game.js, app.js
+│   └── js/                     # api.js, game.js, app.js
 │
 ├── render.yaml                 # Déploiement Render
 └── .node-version               # 20.11.0
@@ -146,8 +141,6 @@ Ouvrez ensuite **http://localhost:3000** dans votre navigateur.
 | `DATABASE_PATH` | — | Chemin de la base SQLite (défaut : `./data/akinator.db`) |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | ✅ (création admin) | Identifiants du compte admin créé au démarrage ; sans `ADMIN_PASSWORD`, la création est ignorée |
 | `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET` | — | Accès à l'API IGDB (recommandations enrichies) |
-| `BTCPAY_SERVER_URL` / `BTCPAY_API_KEY` / `BTCPAY_STORE_ID` / `BTCPAY_WEBHOOK_SECRET` | — | Paiement crypto réel via BTCPay |
-| `APP_URL` | — | URL publique de l'app (redirection après paiement) |
 | `CORS_ORIGIN` | — | Origine(s) autorisée(s) pour CORS |
 
 > ⚠️ **Ne jamais committer le fichier `.env`** — il est déjà ignoré par Git.
@@ -162,13 +155,12 @@ La sécurité est au cœur du projet. Mesures implémentées :
 | **Bcrypt** | Hash des mots de passe (12 rounds) |
 | **2FA (TOTP)** | Second facteur optionnel via `speakeasy` |
 | **Helmet** | En-têtes HTTP de sécurité |
-| **Rate limiting** | Limitation globale + limiteur dédié aux paiements |
+| **Rate limiting** | Limitation globale + limiteurs dédiés (login, 2FA…) |
 | **Verrouillage de compte** | Blocage temporaire après échecs de connexion répétés |
 | **CSRF** | Protection maison sur les routes sensibles (`tokens`, `a2f`, `avatar`, `admin`) |
 | **Validation** | Sanitization systématique des entrées (`express-validator`) |
 | **Chiffrement** | Adresses IP chiffrées en base (AES-256-GCM) via `ENCRYPTION_KEY` dédiée, obligatoire en production (fail-secure) + migration dédiée |
 | **Audit** | Journal d'audit protégé par chaînage HMAC (`AUDIT_HMAC_KEY`), obligatoire en production (fail-secure) |
-| **Webhooks signés** | Vérification HMAC-SHA256 et comparaison *timing-safe* pour BTCPay |
 | **CORS** | Origines contrôlées (fermé par défaut en production) |
 | **Logs** | Journalisation sans données sensibles |
 
@@ -190,7 +182,6 @@ Base : `/api`. 🔒 = authentification requise (JWT), 👑 = réservé aux admin
 | POST | `/claim-daily` 🔒 | Récupérer les jetons quotidiens |
 | POST | `/change-password` 🔒 | Changer le mot de passe |
 | POST | `/forgot-password` | Réinitialisation du mot de passe |
-| POST | `/link-wallet` 🔒 | Lier un wallet crypto |
 | POST | `/logout` 🔒 | Déconnexion (révoque access + refresh) |
 | POST | `/refresh` | Rotation du refresh token → nouvelle paire de tokens |
 
@@ -211,13 +202,8 @@ Base : `/api`. 🔒 = authentification requise (JWT), 👑 = réservé aux admin
 | Méthode | Route | Description |
 |---------|-------|-------------|
 | GET | `/balance` 🔒 | Solde de jetons |
-| GET | `/prices` | Prix des packs (BTC/ETH) |
-| POST | `/purchase` 🔒 | Initier un achat |
-| POST | `/verify` 🔒 | Vérifier un paiement |
 | GET | `/transactions` 🔒 | Historique des transactions |
 | POST | `/gift` | Jetons gratuits (démo) |
-| POST | `/btcpay/create` | Créer une invoice BTCPay |
-| GET | `/btcpay/status/:invoiceId` | Statut d'une invoice |
 
 ### 2FA — `/api/a2f` 🔒
 `POST /setup` · `POST /verify-setup` · `POST /verify` · `POST /disable` · `GET /status`
@@ -226,21 +212,18 @@ Base : `/api`. 🔒 = authentification requise (JWT), 👑 = réservé aux admin
 `POST /upload` · `DELETE /`
 
 ### Administration — `/api/admin` 👑
-Statistiques, gestion des utilisateurs (`GET/DELETE /users`, `promote`, `demote`, `unlock`,
-crédit de jetons) et validation des transactions en attente (`approve` / `reject`).
+Statistiques, gestion des utilisateurs (`GET/DELETE /users`, `promote`, `demote`, `unlock`) et
+attribution de jetons (`POST /users/:id/tokens`).
 
-## 💳 Paiement crypto
+## 🪙 Jetons
 
-Les jetons s'achètent par **packs** (10, 25, 50 ou 100 jetons) réglés en **BTC** ou **ETH**.
-
-**Mode BTCPay Server (recommandé)** — auto-hébergé, sans intermédiaire :
-1. Le backend crée une **invoice** via l'API BTCPay.
-2. L'utilisateur paie à l'adresse fournie.
-3. BTCPay notifie l'app par **webhook signé (HMAC-SHA256)**.
-4. Les jetons sont crédités automatiquement après validation.
-
-Un mode manuel (envoi crypto + hash de transaction) reste possible, avec **validation par un
-administrateur** depuis le panneau d'admin.
+Les jetons s'obtiennent de deux façons :
+- **Claim quotidien** (`POST /api/auth/claim-daily`) — jetons gratuits, une fois par jour.
+- **Attribution par un administrateur** (`POST /api/admin/users/:id/tokens`) — body
+  `{ action: 'add'|'set', amount, reason }`. `add` incrémente le solde, `set` le fixe à une
+  valeur absolue (correction exceptionnelle). La `reason` est **obligatoire** (≤ 200 caractères).
+  L'opération est tracée comme transaction de type `admin_grant` et journalisée dans l'audit
+  (`admin.user.tokens`).
 
 ## ☁️ Déploiement
 
@@ -250,7 +233,7 @@ Le projet est prêt pour **[Render](https://render.com)** via [`render.yaml`](./
 - **Start** : `cd backend && node server.js`
 - **Région** : Frankfurt · **Plan** : free
 - `JWT_SECRET` est généré automatiquement ; renseignez `ADMIN_PASSWORD` et, si besoin, les
-  variables Twitch/BTCPay dans le tableau de bord Render.
+  variables Twitch dans le tableau de bord Render.
 
 ## 🧑‍💻 Développement — hooks git
 
