@@ -829,6 +829,9 @@ async function loadAdminData() {
         // Charger les utilisateurs
         const users = await API.getAdminUsers();
         displayUsers(users.data.users);
+
+        // Charger le journal des attributions de crédits
+        await loadCreditGrants();
     } catch (error) {
         console.error('Erreur chargement admin:', error);
         showToast('Erreur lors du chargement des données admin', 'error');
@@ -928,6 +931,64 @@ function displayUsers(users) {
         tr.appendChild(tdActions);
         tbody.appendChild(tr);
     });
+}
+
+async function loadCreditGrants() {
+    const tbody = document.getElementById('grantsTableBody');
+    if (!tbody) return;
+    try {
+        const result = await API.getAuditEntries('admin.user.tokens', 50);
+        const entries = result.data.entries;
+        tbody.innerHTML = '';
+        if (!entries || entries.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--text-muted);">Aucune attribution</td></tr>';
+            return;
+        }
+        entries.forEach(entry => {
+            let details = {};
+            try { details = JSON.parse(entry.details) || {}; } catch (e) { /* entrée ancienne */ }
+
+            const tr = document.createElement('tr');
+
+            const tdDate = document.createElement('td');
+            tdDate.textContent = entry.created_at ? new Date(entry.created_at).toLocaleString('fr-FR') : '-';
+            tr.appendChild(tdDate);
+
+            const tdAdmin = document.createElement('td');
+            tdAdmin.textContent = details.adminUsername || entry.user_id || '-';
+            tr.appendChild(tdAdmin);
+
+            const tdTarget = document.createElement('td');
+            const strong = document.createElement('strong');
+            strong.textContent = details.targetUsername || details.targetId || '-';
+            tdTarget.appendChild(strong);
+            tr.appendChild(tdTarget);
+
+            const tdOp = document.createElement('td');
+            if (details.action === 'add') {
+                tdOp.textContent = (details.amount >= 0 ? '+' : '') + details.amount + ' jetons';
+            } else if (details.action === 'set') {
+                tdOp.textContent = 'fixé à ' + details.amount;
+            } else {
+                tdOp.textContent = details.amount != null ? String(details.amount) : '-';
+            }
+            tr.appendChild(tdOp);
+
+            const tdBalance = document.createElement('td');
+            tdBalance.textContent = (details.oldBalance != null && details.newBalance != null)
+                ? details.oldBalance + ' → ' + details.newBalance
+                : '-';
+            tr.appendChild(tdBalance);
+
+            const tdReason = document.createElement('td');
+            tdReason.textContent = details.reason || '-';
+            tr.appendChild(tdReason);
+
+            tbody.appendChild(tr);
+        });
+    } catch (error) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);">Erreur de chargement</td></tr>';
+    }
 }
 
 async function handleCleanupIPs() {

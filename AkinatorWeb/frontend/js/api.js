@@ -340,6 +340,12 @@ const API = {
         return this.post(`/admin/users/${userId}/tokens`, { action, amount, reason });
     },
 
+    async getAuditEntries(eventType, limit = 50) {
+        const params = new URLSearchParams({ limit });
+        if (eventType) params.set('event_type', eventType);
+        return this.get(`/admin/audit?${params.toString()}`);
+    },
+
     async cleanupIPs() {
         return this.get('/admin/cleanup-ips');
     },

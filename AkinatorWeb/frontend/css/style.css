@@ -264,11 +264,6 @@ body {
     width: 100%;
 }
 
-.btn-wallet {
-    background: linear-gradient(135deg, #f6851b, #e2761b);
-    color: white;
-}
-
 .btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
@@ -1030,87 +1025,6 @@ body {
 }
 
 /* ─────────────────────────────────────────────────────────────
-   Token Packs
-   ───────────────────────────────────────────────────────────── */
-.token-packs {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: var(--spacing-md);
-    margin-bottom: var(--spacing-lg);
-}
-
-.token-pack {
-    background: var(--bg-dark);
-    border: 2px solid var(--border);
-    border-radius: var(--radius-md);
-    padding: var(--spacing-md);
-    text-align: center;
-    cursor: pointer;
-    transition: all var(--transition-normal);
-    position: relative;
-}
-
-.token-pack:hover {
-    border-color: var(--primary);
-    transform: translateY(-4px);
-}
-
-.token-pack.popular {
-    border-color: var(--accent);
-}
-
-.token-pack.selected {
-    border-color: var(--primary);
-    background: rgba(108, 92, 231, 0.1);
-}
-
-.pack-badge {
-    position: absolute;
-    top: -10px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: var(--accent);
-    color: var(--bg-dark);
-    padding: 0.2rem 0.6rem;
-    border-radius: var(--radius-full);
-    font-size: 0.75rem;
-    font-weight: 700;
-}
-
-.pack-tokens {
-    font-size: 1.5rem;
-    font-weight: 800;
-    margin-bottom: var(--spacing-xs);
-}
-
-.pack-price {
-    color: var(--text-secondary);
-}
-
-.wallet-section {
-    text-align: center;
-    margin-bottom: var(--spacing-lg);
-}
-
-.wallet-status {
-    margin-top: var(--spacing-sm);
-    font-size: 0.9rem;
-    color: var(--text-secondary);
-}
-
-.gift-section {
-    text-align: center;
-    padding-top: var(--spacing-md);
-    border-top: 1px solid var(--border);
-}
-
-.gift-section p {
-    font-size: 0.85rem;
-    color: var(--text-muted);
-    margin-bottom: var(--spacing-xs);
-}
-
-/* ─────────────────────────────────────────────────────────────
    Shop Section (Boutique)
    ───────────────────────────────────────────────────────────── */
 .shop-section {
@@ -1207,109 +1121,6 @@ body {
     opacity: 0.9;
 }
 
-.shop-subtitle {
-    font-size: 1.5rem;
-    margin-bottom: var(--spacing-lg);
-    text-align: center;
-}
-
-/* Token Packs Grid */
-.token-packs-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: var(--spacing-lg);
-    margin-bottom: var(--spacing-xl);
-}
-
-.shop-pack {
-    background: var(--bg-card);
-    border: 2px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: var(--spacing-xl) var(--spacing-lg);
-    text-align: center;
-    cursor: pointer;
-    transition: all var(--transition-normal);
-    position: relative;
-}
-
-.shop-pack:hover {
-    border-color: var(--primary);
-    transform: translateY(-8px);
-    box-shadow: var(--glow-primary);
-}
-
-.shop-pack.selected {
-    border-color: var(--accent);
-    background: rgba(0, 206, 201, 0.1);
-}
-
-.shop-pack.popular {
-    border-color: var(--primary-light);
-}
-
-.shop-pack.best-value {
-    border-color: var(--warning);
-}
-
-.pack-badge {
-    position: absolute;
-    top: -12px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: var(--primary);
-    color: white;
-    padding: 0.3rem 1rem;
-    border-radius: var(--radius-full);
-    font-size: 0.8rem;
-    font-weight: 700;
-    white-space: nowrap;
-}
-
-.shop-pack.best-value .pack-badge {
-    background: var(--warning);
-    color: var(--bg-dark);
-}
-
-.pack-icon {
-    font-size: 3rem;
-    margin-bottom: var(--spacing-sm);
-}
-
-.pack-icon-img {
-    width: 80px;
-    height: 80px;
-    object-fit: contain;
-    margin-bottom: var(--spacing-sm);
-}
-
-/* Sprite pour les icônes de packs */
-/* Image: 1024x367px avec 4 icônes = 256px par icône */
-.pack-icon-sprite {
-    width: 90px;
-    height: 90px;
-    background-image: url('../images/tokens-sprite-removebg-preview.png');
-    background-repeat: no-repeat;
-    margin: 0 auto var(--spacing-md);
-    /* Ratio: 90/256 = 0.351 -> 1024 * 0.351 = 360px */
-    background-size: 360px auto;
-}
-
-.pack-icon-sprite.coin {
-    background-position: 0px center;
-}
-
-.pack-icon-sprite.moneybag {
-    background-position: -90px center;
-}
-
-.pack-icon-sprite.chest {
-    background-position: -180px center;
-}
-
-.pack-icon-sprite.crown {
-    background-position: -270px center;
-}
-
 /* Petite icône de pièce (header, solde) */
 .coin-icon-small {
     display: inline-block;
@@ -1332,62 +1143,6 @@ body {
     background-size: 72px auto;
     background-position: 0px center;
     vertical-align: middle;
-}
-
-.pack-amount {
-    font-size: 1.5rem;
-    font-weight: 800;
-    margin-bottom: var(--spacing-xs);
-}
-
-.pack-price {
-    font-size: 1.2rem;
-    color: var(--accent);
-    font-weight: 600;
-    margin-bottom: var(--spacing-xs);
-}
-
-.pack-note {
-    font-size: 0.85rem;
-    color: var(--text-muted);
-}
-
-/* Payment Section */
-.payment-section {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: var(--spacing-xl);
-    text-align: center;
-    margin-bottom: var(--spacing-xl);
-}
-
-.payment-section h3 {
-    margin-bottom: var(--spacing-sm);
-}
-
-.payment-network {
-    color: var(--text-secondary);
-    margin-bottom: var(--spacing-lg);
-}
-
-.btn-wallet {
-    background: linear-gradient(135deg, #f6851b, #e2761b);
-    color: white;
-}
-
-.btn-wallet:hover {
-    box-shadow: 0 10px 30px rgba(246, 133, 27, 0.4);
-}
-
-.wallet-connected {
-    margin-top: var(--spacing-md);
-}
-
-.wallet-address {
-    color: var(--success);
-    margin-bottom: var(--spacing-md);
-    font-family: monospace;
 }
 
 /* Demo Section */
@@ -2065,107 +1820,6 @@ body {
     vertical-align: middle;
 }
 
-/* ─────────────────────────────────────────────────────────────
-   Crypto Payment Selection
-   ───────────────────────────────────────────────────────────── */
-.crypto-selector {
-    display: flex;
-    gap: var(--spacing-sm);
-    margin-bottom: var(--spacing-lg);
-}
-
-.crypto-option {
-    flex: 1;
-    padding: var(--spacing-md);
-    background: var(--bg-dark);
-    border: 2px solid var(--border);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    text-align: center;
-    transition: all var(--transition-fast);
-}
-
-.crypto-option:hover {
-    border-color: var(--primary);
-}
-
-.crypto-option.selected {
-    border-color: var(--primary);
-    background: rgba(145, 70, 255, 0.1);
-}
-
-.crypto-option .crypto-icon {
-    font-size: 2rem;
-    margin-bottom: var(--spacing-xs);
-}
-
-.crypto-option .crypto-name {
-    font-weight: 600;
-    color: var(--text-primary);
-}
-
-.payment-address-box {
-    background: var(--bg-dark);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    padding: var(--spacing-md);
-    margin-top: var(--spacing-md);
-}
-
-.payment-address-box h4 {
-    color: var(--text-secondary);
-    font-size: 0.9rem;
-    margin-bottom: var(--spacing-sm);
-}
-
-.address-display {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-    background: var(--bg-card);
-    padding: var(--spacing-sm);
-    border-radius: var(--radius-sm);
-    word-break: break-all;
-    font-family: monospace;
-    font-size: 0.85rem;
-}
-
-.copy-btn {
-    background: var(--primary);
-    border: none;
-    color: white;
-    padding: 0.5rem;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    flex-shrink: 0;
-    transition: background var(--transition-fast);
-}
-
-.copy-btn:hover {
-    background: var(--primary-dark);
-}
-
-.payment-amount {
-    margin-top: var(--spacing-md);
-    padding: var(--spacing-md);
-    background: rgba(145, 70, 255, 0.1);
-    border-radius: var(--radius-md);
-    text-align: center;
-}
-
-.payment-amount .amount-value {
-    font-size: 1.5rem;
-    font-weight: 800;
-    color: var(--primary);
-}
-
-.payment-amount .amount-label {
-    color: var(--text-muted);
-    font-size: 0.9rem;
-}
-    margin-top: var(--spacing-xs);
-}
-
 /* Nav button */
 .nav-btn {
     margin-right: var(--spacing-sm);
@@ -2451,11 +2105,7 @@ body {
     .options-grid {
         grid-template-columns: 1fr;
     }
-    
-    .token-packs {
-        grid-template-columns: 1fr;
-    }
-    
+
     .game-actions {
         flex-direction: column;
     }

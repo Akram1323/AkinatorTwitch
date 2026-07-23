@@ -324,15 +324,12 @@ function initializeQueries() {
             INSERT INTO transactions (id, user_id, type, amount, tx_hash, status)
             VALUES (?, ?, ?, ?, ?, ?)
         `),
-        findById: db.prepare('SELECT * FROM transactions WHERE id = ?'),
-        findByTxHash: db.prepare('SELECT * FROM transactions WHERE tx_hash = ?'),
         findByUser: db.prepare(`
-            SELECT * FROM transactions 
-            WHERE user_id = ? 
-            ORDER BY created_at DESC 
+            SELECT * FROM transactions
+            WHERE user_id = ?
+            ORDER BY created_at DESC
             LIMIT 50
-        `),
-        updateStatus: db.prepare('UPDATE transactions SET status = ? WHERE id = ?')
+        `)
     };
 
     // REQUÊTES PARTIES

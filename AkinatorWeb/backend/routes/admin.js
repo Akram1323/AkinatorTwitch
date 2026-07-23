@@ -10,7 +10,7 @@ const express = require('express');
 const { runFullCleanup } = require('../services/cleanup');
 const { authenticateToken, requireAdmin } = require('../middleware/security');
 const { queries } = require('../services/database');
-const { decryptIP } = require('../services/encryption');
+const { decryptIP, hashIPForLogging } = require('../services/encryption');
 const { appendAudit, verifyAuditChain } = require('../services/auditService');
 const { v4: uuidv4 } = require('uuid');
 
@@ -250,9 +250,20 @@ router.post('/users/:id/tokens', async (req, res) => {
 
         console.log(`🔧 Admin ${req.user.username} attribue des jetons à ${user.username}: ${oldBalance} -> ${newBalance} (${action}, ${reason.trim()})`);
 
+        const rawIP = req.ip || req.connection.remoteAddress || 'unknown';
         appendAudit('admin.user.tokens', {
             userId: req.user.id,
-            details: { targetId: req.params.id, action, amount, reason: reason.trim() }
+            ipHash: hashIPForLogging(rawIP),
+            details: {
+                targetId: req.params.id,
+                targetUsername: user.username,
+                adminUsername: req.user.username,
+                action,
+                amount,
+                oldBalance,
+                newBalance,
+                reason: reason.trim()
+            }
         });
 
         res.json({
@@ -426,7 +437,13 @@ router.get('/audit', async (req, res) => {
     try {
         const db = require('../services/database').db;
         const limit = Math.min(Math.max(parseInt(req.query.limit) || 100, 1), 500);
-        const entries = db.prepare('SELECT * FROM audit_log ORDER BY id DESC LIMIT ?').all(limit);
+        const eventType = typeof req.query.event_type === 'string' && req.query.event_type.length <= 100
+            ? req.query.event_type
+            : null;
+
+        const entries = eventType
+            ? db.prepare('SELECT * FROM audit_log WHERE event_type = ? ORDER BY id DESC LIMIT ?').all(eventType, limit)
+            : db.prepare('SELECT * FROM audit_log ORDER BY id DESC LIMIT ?').all(limit);
 
         res.json({ success: true, data: { entries } });
     } catch (error) {
