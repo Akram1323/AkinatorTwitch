@@ -120,7 +120,11 @@ function resolveSlugDynamicWith(requestFn) {
         const cacheKey = `igdb:resolve:${filterType}:${slug}`;
         const cached = queries.cache.get.get(cacheKey);
         if (cached) {
-            return JSON.parse(cached.data);
+            try {
+                return JSON.parse(cached.data);
+            } catch (parseError) {
+                console.warn(`⚠️ Cache IGDB corrompu pour ${cacheKey} — traité comme cache miss: ${parseError.message}`);
+            }
         }
 
         const chain = RESOLVE_CHAIN[filterType] || [];

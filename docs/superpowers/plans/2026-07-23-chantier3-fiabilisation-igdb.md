@@ -18,7 +18,7 @@
 ## Global Constraints
 
 - Tests : `/usr/bin/node --test tests/` depuis `AkinatorWeb/backend` (le node par défaut v24 ne compile pas better-sqlite3). Aucun test ne doit toucher le réseau : les tests unitaires ciblent les fonctions pures et la résolution avec « fetcher » injecté.
-- Un filtre non résoluble n'est JAMAIS ignoré silencieusement : `console.warn` explicite + le champ `ignoredFilters` dans le retour de `searchGamesByFilters` (log serveur uniquement, pas d'UI).
+- Un filtre non résoluble n'est JAMAIS ignoré silencieusement : `console.warn` explicite côté serveur uniquement ; le contrat de retour de `searchGamesByFilters` (et donc de `routes/game.js`) reste inchangé, aucun champ `ignoredFilters` n'est exposé à l'appelant.
 - Ne pas casser le contrat de `POST /api/game/recommend` (`routes/game.js:254-333`) : `data.games`, `data.filters`, `data.count` inchangés.
 - Comportements réseau existants conservés : token OAuth caché, timeouts, fallback `getPopularGames` en cas d'erreur.
 - Commits en français (conventional commits), suffixe `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
