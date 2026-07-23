@@ -111,19 +111,6 @@ const a2fLimiter = rateLimit({
 });
 
 /**
- * Rate Limiter pour les paiements crypto
- */
-const paymentLimiter = rateLimit({
-    windowMs: 60 * 1000, // 1 minute
-    max: config.isTest ? 10000 : 3, // 3 requêtes max
-    message: {
-        success: false,
-        error: 'Veuillez patienter avant de soumettre un nouveau paiement'
-    },
-    store: buildLimiterStore('payment')
-});
-
-/**
  * Middleware d'authentification JWT
  */
 const authenticateToken = (req, res, next) => {
@@ -351,7 +338,6 @@ module.exports = {
     authLimiter,
     registerLimiter,
     a2fLimiter,
-    paymentLimiter,
     authenticateToken,
     optionalAuth,
     requireAdmin,

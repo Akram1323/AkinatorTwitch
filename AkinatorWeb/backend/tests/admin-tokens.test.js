@@ -53,6 +53,27 @@ test("action 'set' fixe le solde ; le delta est tracé", async () => {
     assert.strictEqual(db.prepare('SELECT tokens FROM users WHERE id = ?').get(target.id).tokens, 42);
 });
 
+test("action 'add' avec un montant négatif légal décrémente le solde", async () => {
+    const target = await setupUsers();
+    const ctx = await login(ADMIN);
+
+    const credit = await grant(ctx, target.id, { action: 'add', amount: 10, reason: 'crédit initial' });
+    assert.strictEqual(credit.status, 200);
+
+    const res = await grant(ctx, target.id, { action: 'add', amount: -2, reason: 'correction mineure' });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.data.newBalance, res.body.data.oldBalance - 2);
+
+    const inDb = db.prepare('SELECT tokens FROM users WHERE id = ?').get(target.id);
+    assert.strictEqual(inDb.tokens, target.tokens + 10 - 2);
+
+    // created_at a une résolution à la seconde : les deux admin_grant de ce test
+    // peuvent la partager, d'où le tri secondaire sur rowid (ordre d'insertion).
+    const tx = db.prepare("SELECT * FROM transactions WHERE user_id = ? AND type = 'admin_grant' ORDER BY created_at DESC, rowid DESC LIMIT 1").get(target.id);
+    assert.ok(tx, "une transaction admin_grant doit être créée");
+    assert.strictEqual(tx.amount, -2);
+});
+
 test('validations : raison obligatoire, action connue, montant entier, solde final >= 0', async () => {
     const target = await setupUsers();
     const ctx = await login(ADMIN);
@@ -63,7 +84,8 @@ test('validations : raison obligatoire, action connue, montant entier, solde fin
         { action: 'multiply', amount: 5, reason: 'x' },                // action inconnue
         { action: 'add', amount: 2.5, reason: 'x' },                   // non entier
         { action: 'set', amount: -1, reason: 'x' },                    // set négatif
-        { action: 'add', amount: -9999, reason: 'x' }                  // solde final négatif
+        { action: 'add', amount: -9999, reason: 'x' },                 // solde final négatif
+        { action: 'add', amount: 2000000, reason: 'x' }                // montant hors borne
     ]) {
         const res = await grant(ctx, target.id, body);
         assert.strictEqual(res.status, 400, `body ${JSON.stringify(body)} doit être refusé`);

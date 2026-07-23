@@ -212,14 +212,14 @@ router.post('/users/:id/tokens', async (req, res) => {
             });
         }
 
-        if (typeof amount !== 'number' || !Number.isInteger(amount)) {
+        if (typeof amount !== 'number' || !Number.isSafeInteger(amount) || Math.abs(amount) > 1000000) {
             return res.status(400).json({
                 success: false,
-                error: 'Montant invalide (doit être un entier)'
+                error: 'Montant invalide (entier, maximum 1 000 000 en valeur absolue)'
             });
         }
 
-        if (typeof reason !== 'string' || reason.trim().length === 0 || reason.length > 200) {
+        if (typeof reason !== 'string' || reason.trim().length === 0 || reason.trim().length > 200) {
             return res.status(400).json({
                 success: false,
                 error: 'Raison obligatoire (200 caractères max)'

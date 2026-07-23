@@ -107,6 +107,8 @@ function initializeTables() {
     const txTable = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'transactions'").get();
     if (txTable && !txTable.sql.includes('admin_grant')) {
         db.exec(`
+            DROP TABLE IF EXISTS transactions_new;
+            BEGIN;
             CREATE TABLE transactions_new (
                 id TEXT PRIMARY KEY,
                 user_id TEXT NOT NULL,
@@ -120,6 +122,7 @@ function initializeTables() {
             INSERT INTO transactions_new SELECT * FROM transactions;
             DROP TABLE transactions;
             ALTER TABLE transactions_new RENAME TO transactions;
+            COMMIT;
         `);
     }
 
