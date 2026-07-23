@@ -37,6 +37,10 @@ flux crypto manuel legacy (MetaMask/ethers.js). Décisions produit :
   `/gift`, `/history` (et tout ce qui n'est pas paiement).
 - `server.js` : montage du webhook BTCPay (l.124-125), capture `rawBody`
   (l.59-65) si plus utilisée.
+- `routes/admin.js` : routes `GET /transactions/pending`,
+  `POST /transactions/:id/approve`, `POST /transactions/:id/reject` — plus
+  aucun achat ne peut créer de transaction `pending`, et l'approbation
+  créditait sans raison ; la route d'attribution devient la seule voie.
 - `config.js` : blocs `btcpay` et `crypto`.
 - `env.example.txt` : variables `BTCPAY_*`, adresses crypto.
 - `package.json` : dépendance `ethers`.
