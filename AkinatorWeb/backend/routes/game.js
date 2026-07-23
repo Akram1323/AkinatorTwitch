@@ -262,6 +262,16 @@ router.post('/recommend', optionalAuth, async (req, res) => {
             });
         }
 
+        // Plafonner le nombre de filtres : route accessible anonymement, chaque
+        // slug inconnu déclenche jusqu'à 2 appels IGDB sortants + une écriture cache
+        // (arbre à 4 niveaux, 10 est généreux)
+        if (!Array.isArray(filters) || filters.length > 10) {
+            return res.status(400).json({
+                success: false,
+                error: 'Filtres invalides (maximum 10)'
+            });
+        }
+
         // Si un utilisateur est authentifié et qu'un gameId est fourni, vérifier la propriété (protection IDOR)
         if (req.user && gameId) {
             const game = queries.games.findById.get(gameId);

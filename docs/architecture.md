@@ -66,6 +66,16 @@ Points d'attention dans `server.js` :
 
 🔒 = `authenticateToken` · 👑 = `requireAdmin` (après `authenticateToken`).
 
+### Filtre IGDB irrésoluble
+
+Si un slug de filtre (genre, plateforme, thème, mode) ne correspond à aucun ID
+IGDB — via `resolveSlugDynamic`, y compris le fallback thème→keywords —,
+`igdbFilters.resolveFilters` l'exclut de la requête plutôt que de faire
+échouer la recommandation. `igdb.js` logue alors `⚠️ Filtres ignorés (aucune
+correspondance IGDB): ...` et poursuit la recherche avec les filtres restants ;
+au démarrage, `validateTreeSlugs()` fait le même contrôle sur tout l'arbre de
+décision et n'émet qu'un avertissement (jamais de blocage).
+
 ## Services (`services/`)
 
 | Service | Rôle |
@@ -76,7 +86,8 @@ Points d'attention dans `server.js` :
 | `encryption.js` | AES-256-GCM pour chiffrer les IP en base + SHA-256 pour hacher les IP dans les logs (RGPD). |
 | `passwordService.js` | Politique de mot de passe (validation, force). |
 | `twoFactor.js` | TOTP (speakeasy) : génération de secret, QR, vérification, anti-rejeu (`a2f_last_step`). |
-| `igdb.js` / `igdbService.js` | Accès à l'API IGDB (jeux, jaquettes), avec cache SQLite. |
+| `igdb.js` | Réseau : OAuth Twitch (token mis en cache mémoire), requêtes IGDB (jeux, jaquettes), résolution dynamique slug→ID (`resolveSlugDynamic`) avec cache DB `igdb_cache` (TTL 7 jours). |
+| `igdbFilters.js` | Module pur et testable : mappings de filtres (multi-ID, cross-facette) et construction de la requête IGDB (`resolveFilters`, `buildGamesQuery`). Aucun appel réseau. |
 | `cleanup.js` | Purges programmées : IP anciennes (RGPD), tokens expirés, CSRF expirés. |
 
 ## Schéma de la base
@@ -92,7 +103,7 @@ existe déjà »).
 | `transactions` | Gifts/daily/parties/attributions admin (`admin_grant`) | `status` contraint (`pending`/`completed`/`failed`). |
 | `games` | Parties jouées | Filtres + recommandations sérialisés. |
 | `decision_tree` | Arbre Akinator | Nœuds (genre → plateforme → thème → mode). Peuplé au 1er démarrage. |
-| `igdb_cache` | Cache IGDB | TTL 1 h. |
+| `igdb_cache` | Cache IGDB | Résolution dynamique slug→ID (`resolveSlugDynamic`), TTL 7 jours. |
 | `sessions` | Trace de connexion | Audit léger (IP, user-agent). |
 | `refresh_tokens` | Refresh rotatifs | `token_hash` (SHA-256, jamais en clair), `family_id`, `used_at`, `revoked` → rotation + reuse detection. |
 | `revoked_tokens` | Blacklist access | Par `jti`, purge après expiration. |
@@ -115,10 +126,12 @@ Pragmas SQLite : `journal_mode=WAL`, `foreign_keys=ON`, `secure_delete=ON`.
 ## Démarrage (`startServer`)
 
 Ordre dans `server.js` : `initializeTables()` → `initializeDecisionTree()`
-(peuple l'arbre au 1er lancement) → `ensureAdminAccount()` (crée/promeut
-l'admin si `ADMIN_PASSWORD` défini) → `runFullCleanup()` (purge RGPD) →
-`app.listen`. Le module n'écoute que si lancé directement
-(`require.main === module`), pour rester importable dans les tests.
+(peuple l'arbre au 1er lancement) → `validateTreeSlugs()` (uniquement si
+`TWITCH_CLIENT_ID`/`TWITCH_CLIENT_SECRET` sont définis ; non bloquant, voir
+« Filtre IGDB irrésoluble ») → `ensureAdminAccount()` (crée/promeut l'admin si
+`ADMIN_PASSWORD` défini) → `runFullCleanup()` (purge RGPD) → `app.listen`. Le
+module n'écoute que si lancé directement (`require.main === module`), pour
+rester importable dans les tests.
 
 ## Tests
 

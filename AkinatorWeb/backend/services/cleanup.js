@@ -9,6 +9,7 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 const config = require('../config/config');
+const { queries } = require('./database');
 
 /**
  * Supprime les IPs stockées depuis plus de 12 mois
@@ -120,29 +121,47 @@ function cleanupOldIPsByCreationDate() {
 }
 
 /**
+ * Purge les entrées expirées du cache de résolution IGDB (table igdb_cache)
+ *
+ * @returns {number} Nombre d'entrées supprimées
+ */
+function cleanupExpiredIgdbCache() {
+    const result = queries.cache.cleanup.run();
+
+    if (result.changes > 0) {
+        console.log(`✅ ${result.changes} entrée(s) du cache IGDB purgée(s) (expirées)`);
+    }
+
+    return result.changes;
+}
+
+/**
  * Exécute le nettoyage complet (IPs par dernière connexion + par date de création)
  */
 function runFullCleanup() {
     console.log('═══════════════════════════════════════════════════════');
     console.log('🧹 NETTOYAGE AUTOMATIQUE DES IPs (Conformité RGPD)');
     console.log('═══════════════════════════════════════════════════════\n');
-    
+
     const result1 = cleanupOldIPs();
     const result2 = cleanupOldIPsByCreationDate();
     const purgedTokens = require('./tokenService').purgeExpiredTokens();
     require('../middleware/csrf').cleanupExpiredTokens();
+    const purgedCacheEntries = cleanupExpiredIgdbCache();
 
     const totalDeleted = result1.deleted + result2.deleted + purgedTokens;
-    
+
     console.log('\n═══════════════════════════════════════════════════════');
     console.log('📊 RÉSUMÉ DU NETTOYAGE');
     console.log('═══════════════════════════════════════════════════════');
     console.log(`✅ Total IPs supprimées: ${totalDeleted}`);
+    console.log(`✅ Cache IGDB purgé: ${purgedCacheEntries} entrée(s)`);
     console.log(`📅 Date limite: ${result1.dateLimit}`);
     console.log('═══════════════════════════════════════════════════════\n');
-    
+
     return {
         totalDeleted,
+        purgedCacheEntries,
         dateLimit: result1.dateLimit
     };
 }
@@ -150,5 +169,6 @@ function runFullCleanup() {
 module.exports = {
     cleanupOldIPs,
     cleanupOldIPsByCreationDate,
+    cleanupExpiredIgdbCache,
     runFullCleanup
 };

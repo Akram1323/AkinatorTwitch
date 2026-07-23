@@ -372,9 +372,10 @@ function initializeQueries() {
             SELECT data FROM igdb_cache 
             WHERE cache_key = ? AND expires_at > datetime('now')
         `),
+        // 3e paramètre obligatoire : modificateur SQLite datetime (ex. "+7 days", "+1 hour").
         set: db.prepare(`
             INSERT OR REPLACE INTO igdb_cache (cache_key, data, expires_at)
-            VALUES (?, ?, datetime('now', '+1 hour'))
+            VALUES (?, ?, datetime('now', ?))
         `),
         cleanup: db.prepare(`DELETE FROM igdb_cache WHERE expires_at < datetime('now')`)
     };
