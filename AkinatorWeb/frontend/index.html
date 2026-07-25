@@ -640,8 +640,9 @@
             <p class="modal-subtitle">Entrez le code de votre application d'authentification</p>
             
             <div class="form-group">
-                <input type="text" id="a2fLoginCode" maxlength="6" pattern="[0-9]{6}" 
+                <input type="text" id="a2fLoginCode" maxlength="10" pattern="[0-9]{6}|[0-9a-fA-F]{10}"
                        placeholder="000000" class="a2f-code-input" autocomplete="off">
+                <small class="form-hint">Vous pouvez aussi saisir un de vos codes de secours (10 caractères).</small>
             </div>
             <div class="form-error" id="a2fLoginError"></div>
             

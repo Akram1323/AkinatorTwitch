@@ -1355,8 +1355,14 @@ async function verifyA2FLogin() {
     
     errorDiv.style.display = 'none';
     
-    if (!code || code.length !== 6) {
-        errorDiv.textContent = 'Code invalide (6 chiffres)';
+    // 6 chiffres = code TOTP, 10 caractères hexadécimaux = code de secours.
+    // Le backend accepte les deux depuis toujours (verify-login-a2f) ; c'est
+    // uniquement cette validation cliente qui rendait les codes de secours
+    // impossibles à saisir.
+    var estTotp = /^[0-9]{6}$/.test(code);
+    var estCodeSecours = /^[0-9a-fA-F]{10}$/.test(code);
+    if (!estTotp && !estCodeSecours) {
+        errorDiv.textContent = 'Entrez un code à 6 chiffres ou un code de secours à 10 caractères';
         errorDiv.style.display = 'block';
         return;
     }
