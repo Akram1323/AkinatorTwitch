@@ -8,6 +8,14 @@
 
 require('dotenv').config();
 
+const path = require('path');
+
+// Répertoire des données persistantes.
+// En local : backend/data. En production (Render, VM…) : pointer DATA_DIR sur
+// le disque monté (ex. /var/data), sinon la base et les avatars sont perdus à
+// chaque redéploiement.
+const dataDir = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
+
 // Validation des variables requises
 const requiredEnvVars = ['JWT_SECRET'];
 const optionalEnvVars = ['TWITCH_CLIENT_ID', 'TWITCH_CLIENT_SECRET'];
@@ -51,7 +59,13 @@ module.exports = {
 
     // Base de données
     database: {
-        path: process.env.DATABASE_PATH || './data/akinator.db'
+        path: process.env.DATABASE_PATH || path.join(dataDir, 'akinator.db')
+    },
+
+    // Chemins persistants
+    paths: {
+        dataDir,
+        avatarsDir: process.env.AVATARS_DIR || path.join(dataDir, 'avatars')
     },
 
     // Sécurité

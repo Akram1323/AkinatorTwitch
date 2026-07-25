@@ -12,9 +12,12 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { authenticateToken } = require('../middleware/security');
 const { db, queries } = require('../services/database');
+const config = require('../config/config');
 
-// Configuration du dossier avatars
-const AVATARS_DIR = path.join(__dirname, '../../frontend/avatars');
+// Dossier avatars : sur le disque persistant, PAS dans frontend/ (qui est
+// recréé à chaque déploiement). Servi via la route statique /avatars montée
+// dans server.js.
+const AVATARS_DIR = config.paths.avatarsDir;
 if (!fs.existsSync(AVATARS_DIR)) {
     fs.mkdirSync(AVATARS_DIR, { recursive: true });
 }

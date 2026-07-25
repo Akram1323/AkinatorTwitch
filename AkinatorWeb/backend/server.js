@@ -76,6 +76,15 @@ app.use(securityLogger);
 // FICHIERS STATIQUES (Frontend)
 // ===========================================
 
+// Avatars uploadés : servis depuis le disque persistant (hors de frontend/).
+// Monté AVANT le static général pour avoir la priorité ; express.static
+// appelle next() si le fichier est absent, donc les anciens avatars encore
+// présents dans frontend/avatars restent servis par le static suivant.
+app.use('/avatars', express.static(config.paths.avatarsDir, {
+    index: false,
+    dotfiles: 'ignore'
+}));
+
 app.use(express.static(path.join(__dirname, '../frontend')));
 
 // ===========================================

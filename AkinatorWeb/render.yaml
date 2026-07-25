@@ -3,9 +3,19 @@ services:
     name: akinatorweb
     runtime: node
     region: frankfurt
-    plan: free
+    # 'free' n'autorise PAS de disque persistant : la base SQLite et les avatars
+    # sont perdus à chaque redéploiement. 'starter' est le minimum pour un disque
+    # (et supprime aussi la mise en veille après inactivité).
+    plan: starter
     buildCommand: cd backend && npm install
     startCommand: cd backend && node server.js
+    # Disque persistant : survit aux redéploiements et aux redémarrages.
+    # Contrainte : un service avec disque ne peut pas être scalé au-delà
+    # d'une instance (ce que SQLite impose déjà de toute façon).
+    disk:
+      name: akinator-data
+      mountPath: /var/data
+      sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
@@ -17,8 +27,22 @@ services:
         value: Akinator
       - key: ADMIN_PASSWORD
         sync: false        # À renseigner manuellement dans Render (votre mot de passe admin)
-      - key: DATABASE_PATH
-        value: ./data/akinator.db
+      # Base de données et avatars sur le disque monté.
+      # DATA_DIR suffit : le code en dérive akinator.db et avatars/.
+      - key: DATA_DIR
+        value: /var/data
+      # Secrets REQUIS en production : sans eux le serveur refuse de démarrer
+      # (fail-secure, services/encryption.js et services/auditService.js).
+      # Format imposé : 64 caractères hexadécimaux — donc PAS generateValue,
+      # qui ne respecte pas ce format. Générer avec :
+      #   cd backend && node scripts/generate-keys.js
+      # puis coller les valeurs dans le dashboard Render.
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: AUDIT_HMAC_KEY
+        sync: false
+      - key: IP_HASH_SALT
+        sync: false
       - key: APP_URL
         value: https://akinatorweb.onrender.com  # Modifier avec votre URL Render
       # Variables optionnelles - décommenter si vous avez les credentials
