@@ -101,11 +101,15 @@ router.post('/verify-setup', a2fLimiter, authenticateToken, async (req, res) => 
             return res.status(401).json({ success: false, error: totpResult.error });
         }
 
-        // Activer l'A2F
-        const updateStmt = db.prepare(
-            'UPDATE users SET a2f_enabled = 1 WHERE id = ?'
-        );
-        updateStmt.run(user.id);
+        // Activation et génération des codes de secours dans la MÊME transaction.
+        // Les découpler laisserait une fenêtre où la 2FA est active sans qu'aucun
+        // code n'existe : si le second appel échouait (réseau, onglet fermé),
+        // l'utilisateur serait protégé sans filet et l'ignorerait.
+        const activer = db.transaction(() => {
+            db.prepare('UPDATE users SET a2f_enabled = 1 WHERE id = ?').run(user.id);
+            return generateBackupCodes(user.id);
+        });
+        const codes = activer();
 
         console.log(`✅ A2F activé: ${user.username}`);
 
@@ -113,7 +117,8 @@ router.post('/verify-setup', a2fLimiter, authenticateToken, async (req, res) => 
 
         res.json({
             success: true,
-            message: 'A2F activé avec succès'
+            message: 'A2F activé avec succès',
+            data: { codes }
         });
 
     } catch (error) {
