@@ -21,6 +21,47 @@ router.use(authenticateToken);
 router.use(requireAdmin);
 
 /**
+ * Liste blanche des colonnes de `users` exposables au panneau admin.
+ * Volontairement une liste blanche (et non une liste noire) : toute nouvelle
+ * colonne — potentiellement sensible — reste privée par défaut.
+ * Exclus en particulier : password_hash, a2f_secret, a2f_last_step,
+ * password_changed_at, wallet_address.
+ */
+const CHAMPS_UTILISATEUR_PUBLICS = [
+    'id',
+    'username',
+    'tokens',
+    'total_games',
+    'last_daily_claim',
+    'created_at',
+    'last_login',
+    'is_admin',
+    'a2f_enabled',
+    'locked_until',
+    'failed_login_attempts',
+    'avatar_url',
+    'ip_address'
+];
+
+/**
+ * Projette une ligne `users` sur la liste blanche.
+ * Conserve le comportement historique : is_admin en booléen, IP déchiffrée.
+ * @param {object} user Ligne brute issue de la base
+ * @returns {object} Objet sûr à sérialiser en JSON
+ */
+function projectUser(user) {
+    const safe = {};
+    for (const champ of CHAMPS_UTILISATEUR_PUBLICS) {
+        if (champ in user) {
+            safe[champ] = user[champ];
+        }
+    }
+    safe.is_admin = user.is_admin === 1;
+    safe.ip_address = user.ip_address ? decryptIP(user.ip_address) : null;
+    return safe;
+}
+
+/**
  * GET /api/admin/stats
  * Statistiques générales de la plateforme
  */
@@ -75,17 +116,13 @@ router.get('/users', async (req, res) => {
         const users = queries.users.findAll.all(limit, offset);
         const total = queries.users.count.get().count;
         
-        // Déchiffrer les IPs pour l'affichage admin
-        const usersWithDecryptedIPs = users.map(user => ({
-            ...user,
-            ip_address: user.ip_address ? decryptIP(user.ip_address) : null,
-            is_admin: user.is_admin === 1
-        }));
-        
+        // Projection sur la liste blanche (IPs déchiffrées pour l'affichage admin)
+        const safeUsers = users.map(projectUser);
+
         res.json({
             success: true,
             data: {
-                users: usersWithDecryptedIPs,
+                users: safeUsers,
                 pagination: {
                     page,
                     limit,
@@ -127,11 +164,7 @@ router.get('/users/:id', async (req, res) => {
         res.json({
             success: true,
             data: {
-                user: {
-                    ...user,
-                    ip_address: user.ip_address ? decryptIP(user.ip_address) : null,
-                    is_admin: user.is_admin === 1
-                },
+                user: projectUser(user),
                 transactions,
                 games: games.length
             }
