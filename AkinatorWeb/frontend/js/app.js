@@ -19,6 +19,28 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+/**
+ * Convertit un horodatage SQLite ("YYYY-MM-DD HH:MM:SS") en Date.
+ * Ces valeurs sont écrites en UTC sans indicateur de fuseau : `new Date()` les
+ * interpréterait en heure LOCALE et afficherait une heure fausse (2 h d'écart en
+ * Europe/Paris l'été), avec un verrou qui semble expirer trop tôt.
+ * Pendant du services/sqliteDate.js côté serveur.
+ */
+function parseSqliteDateUTC(value) {
+    if (!value) return null;
+    var brut = String(value);
+    var aUnFuseau = /[Z]$|[+-]\d{2}:?\d{2}$/.test(brut);
+    var normalise = aUnFuseau ? brut : brut.replace(' ', 'T') + 'Z';
+    var date = new Date(normalise);
+    return isNaN(date.getTime()) ? null : date;
+}
+
+/** Un compte est-il actuellement verrouillé ? */
+function estVerrouille(user) {
+    var fin = parseSqliteDateUTC(user.locked_until);
+    return fin !== null && fin.getTime() > Date.now();
+}
+
 // ══════════════════════════════════════════════════════════════
 // Initialisation
 // ══════════════════════════════════════════════════════════════

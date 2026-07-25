@@ -371,6 +371,10 @@ const API = {
         return this.post(`/admin/users/${userId}/demote`, {});
     },
 
+    async unlockUser(userId) {
+        return this.post(`/admin/users/${userId}/unlock`, {});
+    },
+
     async setUserTokens(userId, action, amount, reason) {
         return this.post(`/admin/users/${userId}/tokens`, { action, amount, reason });
     },
