@@ -7,10 +7,10 @@
  */
 
 const express = require('express');
-const { body, validationResult } = require('express-validator');
 
 const { queries } = require('../services/database');
 const { authenticateToken } = require('../middleware/security');
+const { claimDailyTokens, ALREADY_CLAIMED } = require('../services/dailyTokens');
 
 const router = express.Router();
 
@@ -76,79 +76,46 @@ router.get('/transactions', authenticateToken, (req, res) => {
 });
 
 /**
- * POST /api/tokens/gift (Demo)
- * Ajoute des jetons gratuits (limité à 1 fois par jour)
+ * POST /api/tokens/gift
+ * Robinet quotidien de jetons gratuits — MÊME robinet que POST /api/auth/claim-daily
+ * (les deux routes consomment la colonne `last_daily_claim`).
+ *
+ * Donne toujours 3 jetons : le champ `amount` du corps est encore accepté pour
+ * ne pas casser les anciens appels, mais il est délibérément IGNORÉ (il permettait
+ * auparavant de se servir jusqu'à 10 jetons/jour au lieu des 3 prévus).
  */
-router.post('/gift',
-    authenticateToken,
-    [
-        body('amount')
-            .optional()
-            .isInt({ min: 1, max: 10 })
-            .withMessage('Amount must be between 1 and 10')
-    ],
-    (req, res) => {
-        try {
-            const errors = validationResult(req);
-            if (!errors.isEmpty()) {
-                return res.status(400).json({
-                    success: false,
-                    error: errors.array()[0].msg
-                });
-            }
+router.post('/gift', authenticateToken, (req, res) => {
+    try {
+        const user = queries.users.findById.get(req.user.id);
 
-            const user = queries.users.findById.get(req.user.id);
-
-            if (!user) {
-                return res.status(404).json({
-                    success: false,
-                    error: 'Utilisateur non trouvé'
-                });
-            }
-
-            // Validation et parsing sécurisé du montant
-            const amount = req.body.amount ? parseInt(req.body.amount) : 5;
-            if (isNaN(amount) || amount < 1 || amount > 10) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'Montant invalide (doit être entre 1 et 10)'
-                });
-            }
-
-            const tokensToAdd = Math.min(amount, 10); // Max 10 en gift
-
-            // Opération atomique : vérifie ET met à jour en une seule requête (protection race condition)
-            const result = queries.users.claimGiftAtomic.run(tokensToAdd, req.user.id);
-
-            // Si aucune ligne n'a été modifiée, c'est que le gift a déjà été utilisé aujourd'hui
-            if (result.changes === 0) {
-                return res.status(429).json({
-                    success: false,
-                    error: 'Vous avez déjà utilisé le gift aujourd\'hui. Réessayez demain.'
-                });
-            }
-
-            const updatedUser = queries.users.findById.get(req.user.id);
-
-            console.log(`🎁 Gift: ${req.user.username} +${tokensToAdd} jetons`);
-
-            res.json({
-                success: true,
-                message: `${tokensToAdd} jetons offerts !`,
-                data: {
-                    tokensAdded: tokensToAdd,
-                    newBalance: updatedUser.tokens
-                }
-            });
-
-        } catch (error) {
-            console.error('Erreur gift:', error);
-            res.status(500).json({
+        if (!user) {
+            return res.status(404).json({
                 success: false,
-                error: 'Erreur lors du gift'
+                error: 'Utilisateur non trouvé'
             });
         }
+
+        const claim = claimDailyTokens(user.id);
+
+        if (!claim) {
+            return res.status(ALREADY_CLAIMED.status).json(ALREADY_CLAIMED.body);
+        }
+
+        console.log(`🎁 Jetons quotidiens: ${req.user.username} +${claim.tokensAdded} jetons`);
+
+        res.json({
+            success: true,
+            message: `${claim.tokensAdded} jetons quotidiens ajoutés !`,
+            data: claim
+        });
+
+    } catch (error) {
+        console.error('Erreur gift:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Erreur lors du gift'
+        });
     }
-);
+});
 
 module.exports = router;
