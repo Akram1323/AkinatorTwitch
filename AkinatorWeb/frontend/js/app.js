@@ -899,7 +899,7 @@ function displayUsers(users) {
         tdLogin.textContent = user.last_login ? new Date(user.last_login).toLocaleDateString('fr-FR') : 'Jamais';
         tr.appendChild(tdLogin);
         
-        // Admin status
+        // Admin status + état de verrouillage
         const tdAdmin = document.createElement('td');
         if (user.is_admin) {
             const adminSpan = document.createElement('span');
@@ -908,6 +908,15 @@ function displayUsers(users) {
             tdAdmin.appendChild(adminSpan);
         } else {
             tdAdmin.textContent = '-';
+        }
+        if (estVerrouille(user)) {
+            const lockSpan = document.createElement('span');
+            lockSpan.style.cssText = 'color:var(--danger,#e05561);display:block;font-size:0.75rem;';
+            const fin = parseSqliteDateUTC(user.locked_until);
+            lockSpan.textContent = '🔒 Verrouillé jusqu\'à ' +
+                fin.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+            lockSpan.title = user.failed_login_attempts + ' tentative(s) échouée(s)';
+            tdAdmin.appendChild(lockSpan);
         }
         tr.appendChild(tdAdmin);
         
@@ -939,7 +948,27 @@ function displayUsers(users) {
             btnPromote.innerHTML = '<i class="fa-solid fa-shield-halved"></i>';
             tdActions.appendChild(btnPromote);
         }
-        
+
+        // Rétrograder (admins seulement, jamais soi-même : le backend le refuse déjà)
+        if (user.is_admin && user.id !== currentUser.id) {
+            const btnDemote = document.createElement('button');
+            btnDemote.className = 'btn btn-sm btn-ghost';
+            btnDemote.title = 'Rétrograder en utilisateur normal';
+            btnDemote.onclick = () => demoteUserAction(user.id, user.username);
+            btnDemote.innerHTML = '<i class="fa-solid fa-user-minus"></i>';
+            tdActions.appendChild(btnDemote);
+        }
+
+        // Déverrouiller (uniquement si le compte est effectivement verrouillé)
+        if (estVerrouille(user)) {
+            const btnUnlock = document.createElement('button');
+            btnUnlock.className = 'btn btn-sm btn-accent';
+            btnUnlock.title = 'Déverrouiller le compte';
+            btnUnlock.onclick = () => unlockUserAction(user.id, user.username);
+            btnUnlock.innerHTML = '<i class="fa-solid fa-lock-open"></i>';
+            tdActions.appendChild(btnUnlock);
+        }
+
         // Delete button (if not current user)
         if (user.id !== currentUser.id) {
             const btnDelete = document.createElement('button');
@@ -1057,6 +1086,34 @@ async function promoteUser(userId, username) {
     }
 }
 
+async function demoteUserAction(userId, username) {
+    if (!confirm(`Rétrograder ${username} en utilisateur normal ?`)) {
+        return;
+    }
+
+    try {
+        await API.demoteUser(userId);
+        showToast(`${username} rétrogradé`, 'success');
+        loadAdminData();
+    } catch (error) {
+        showToast(error.message || 'Erreur lors de la rétrogradation', 'error');
+    }
+}
+
+async function unlockUserAction(userId, username) {
+    if (!confirm(`Déverrouiller le compte ${username} ?\n\nLes tentatives échouées seront remises à zéro.`)) {
+        return;
+    }
+
+    try {
+        await API.unlockUser(userId);
+        showToast(`Compte ${username} déverrouillé`, 'success');
+        loadAdminData();
+    } catch (error) {
+        showToast(error.message || 'Erreur lors du déverrouillage', 'error');
+    }
+}
+
 async function deleteUser(userId, username) {
     if (!confirm(`⚠️ Supprimer définitivement l'utilisateur ${username} ?\n\nToutes ses données seront supprimées.`)) {
         return;
@@ -1107,6 +1164,8 @@ async function adjustUserTokens(userId, username, currentTokens) {
 // Exposer les fonctions globalement pour les boutons onclick
 window.viewUserDetails = viewUserDetails;
 window.promoteUser = promoteUser;
+window.demoteUserAction = demoteUserAction;
+window.unlockUserAction = unlockUserAction;
 window.deleteUser = deleteUser;
 window.adjustUserTokens = adjustUserTokens;
 
