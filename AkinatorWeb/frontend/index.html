@@ -32,9 +32,9 @@
             </div>
             
             <nav class="nav">
-                <!-- Bouton Mes jetons -->
+                <!-- Bouton Boutique -->
                 <button class="btn btn-ghost nav-btn" id="shopBtn">
-                    <i class="fa-solid fa-coins icon"></i> Mes jetons
+                    <i class="fa-solid fa-cart-shopping icon"></i> Boutique
                 </button>
                 
                 <!-- Affichage des jetons (connecté) -->
@@ -111,8 +111,8 @@
                 <button class="back-home-btn" id="backHomeBtn">← Retour à l'accueil</button>
                 
                 <div class="shop-header">
-                    <h1><i class="fa-solid fa-coins icon-title"></i> Mes Jetons</h1>
-                    <p>Récupérez vos jetons quotidiens gratuits. Besoin de plus ? Contactez un administrateur.</p>
+                    <h1><i class="fa-solid fa-bag-shopping icon-title"></i> Boutique de Jetons</h1>
+                    <p>Achetez des jetons pour jouer plus de parties !</p>
 
                     <div class="current-balance">
                         <span>Votre solde actuel :</span>
@@ -132,6 +132,46 @@
                         <button class="btn btn-accent btn-large" id="claimDailyBtn">
                             Récupérer
                         </button>
+                    </div>
+                </div>
+
+                <!-- Packs de jetons -->
+                <h2 class="shop-subtitle">Packs de Jetons</h2>
+                <div class="token-packs-grid">
+                    <div class="shop-pack" data-pack="pack_10">
+                        <div class="pack-icon-sprite coin"></div>
+                        <div class="pack-amount">10 jetons</div>
+                        <div class="pack-price">~0.50€</div>
+                    </div>
+
+                    <div class="shop-pack popular" data-pack="pack_25">
+                        <div class="pack-badge"><i class="fa-solid fa-star icon-badge"></i> Populaire</div>
+                        <div class="pack-icon-sprite moneybag"></div>
+                        <div class="pack-amount">25 jetons</div>
+                        <div class="pack-price">~1€</div>
+                    </div>
+
+                    <div class="shop-pack" data-pack="pack_50">
+                        <div class="pack-icon-sprite chest"></div>
+                        <div class="pack-amount">50 jetons</div>
+                        <div class="pack-price">~1.80€</div>
+                    </div>
+
+                    <div class="shop-pack best-value" data-pack="pack_100">
+                        <div class="pack-badge"><i class="fa-solid fa-fire icon-badge"></i> Meilleur prix</div>
+                        <div class="pack-icon-sprite crown"></div>
+                        <div class="pack-amount">100 jetons</div>
+                        <div class="pack-price">~3€</div>
+                    </div>
+                </div>
+
+                <!-- Achat indisponible : vitrine de démonstration -->
+                <div class="shop-demo-notice" id="shopDemoNotice">
+                    <i class="fa-solid fa-circle-info icon"></i>
+                    <div>
+                        <strong>Démonstration</strong>
+                        <p>L'achat de jetons est présenté à titre d'illustration : aucun paiement n'est traité.
+                           Pour obtenir des jetons, utilisez le cadeau quotidien ou contactez un administrateur.</p>
                     </div>
                 </div>
             </div>
@@ -468,7 +508,7 @@
 
                 <div class="profile-actions">
                     <button class="btn btn-primary btn-full" id="goToShopFromProfile">
-                        <i class="fa-solid fa-coins icon"></i> Obtenir des jetons
+                        <i class="fa-solid fa-cart-shopping icon"></i> Acheter des jetons
                     </button>
                 </div>
             </div>

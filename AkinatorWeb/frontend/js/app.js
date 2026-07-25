@@ -127,6 +127,13 @@ function attachEventListeners() {
     document.getElementById('backHomeBtn').addEventListener('click', goHome);
     document.getElementById('claimDailyBtn').addEventListener('click', claimDailyTokens);
 
+    // Pack selection (vitrine : aucun paiement n'est déclenché)
+    document.querySelectorAll('.shop-pack').forEach(function(pack) {
+        pack.addEventListener('click', function() {
+            selectPack(this);
+        });
+    });
+
     // Game buttons
     document.getElementById('backBtn').addEventListener('click', function() {
         Game.goBack();
@@ -727,6 +734,20 @@ function showShopSection() {
             claimBtn.textContent = 'Déjà récupéré aujourd\'hui';
         }
     }
+}
+
+/**
+ * Sélection d'un pack de la boutique.
+ * La boutique est une vitrine de démonstration : aucun système de paiement
+ * n'est branché, la sélection est donc purement visuelle.
+ */
+function selectPack(element) {
+    document.querySelectorAll('.shop-pack').forEach(function(el) {
+        el.classList.remove('selected');
+    });
+    element.classList.add('selected');
+
+    showToast('Achat indisponible : la boutique est une démonstration.', 'info');
 }
 
 // ══════════════════════════════════════════════════════════════
