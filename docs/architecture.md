@@ -48,7 +48,21 @@ d'atteindre une route.
 Points d'attention dans `server.js` :
 
 - `GET /api/csrf-token` exige `authenticateToken` : le token CSRF n'est délivré qu'à un utilisateur authentifié.
-- `csrfProtection` est appliqué aux routers **`tokens`, `a2f`, `avatar`, `admin`** — pas à `auth` ni `game` (login/register n'ont pas encore de token CSRF ; `game` est majoritairement public).
+- `csrfProtection` est appliqué **globalement** aux routers **`tokens`, `a2f`, `avatar`, `admin`**.
+  Les routers `auth` et `game` ne peuvent pas l'être globalement (login, register, refresh et le
+  parcours de jeu public n'ont pas de session), mais leurs routes mutantes qui touchent au solde
+  de jetons le sont **route par route** : `POST /api/game/start` (débite 1 jeton) et
+  `POST /api/auth/claim-daily` (en crédite 3). C'est un choix explicite, pas un oubli : toute
+  nouvelle route mutante hors de ces quatre routers doit décider de son cas.
+  Défense en profondeur, la protection primaire restant `sameSite: 'strict'` sur les cookies.
+- **Ordre imposé : `app.use('/api/xxx', authenticateToken, csrfProtection, xxxRoutes)`.**
+  `csrfProtection` valide le token *pour un utilisateur donné* : sans `req.user`, il ne peut rien
+  vérifier. Le monter avant `authenticateToken` (qui n'était appelé qu'à l'intérieur des routers)
+  neutralisait silencieusement toute la protection. Les routers conservent leurs appels internes à
+  `authenticateToken` (idempotents) pour rester sûrs s'ils sont montés ailleurs.
+- `csrfProtection` est **fail-closed** : sur une méthode mutante sans `req.user`, il répond 403 au
+  lieu de laisser passer. Couvert par `tests/csrf-middleware.test.js` (supertest sur l'app montée,
+  pas seulement sur les fonctions unitaires de `csrf.js`).
 - `POST /api/csp-report` contourne volontairement le CSRF : rapports de violation CSP envoyés
   directement par le navigateur, pas depuis une session applicative.
 - `GET /.well-known/security.txt` — politique de divulgation (RFC 9116).
@@ -118,8 +132,8 @@ Pragmas SQLite : `journal_mode=WAL`, `foreign_keys=ON`, `secure_delete=ON`.
 `POST /api/admin/users/:id/tokens` :
 
 1. Pipeline global (helmet → cors → json → cookies → rate limit → sanitize → logger).
-2. `csrfProtection` (routeur `admin`) valide le token CSRF.
-3. `authenticateToken` puis `requireAdmin` : lit `access_token` (cookie, sinon header `Authorization`), vérifie le JWT, rejette si `pending2FA`, si `jti` révoqué, ou si le token est antérieur à `password_changed_at` ; puis vérifie `is_admin`. Injecte `req.user`.
+2. `authenticateToken` (monté sur `/api/admin`) : lit `access_token` (cookie, sinon header `Authorization`), vérifie le JWT, rejette si `pending2FA`, si `jti` révoqué, ou si le token est antérieur à `password_changed_at`. Injecte `req.user`.
+3. `csrfProtection` valide le token CSRF pour `req.user.id`, puis `requireAdmin` (routeur `admin`) vérifie `is_admin`.
 4. Le handler exécute la logique métier via `queries` (requêtes préparées).
 5. Les mutations sensibles appellent `appendAudit(...)` pour tracer l'événement (ici `admin.user.tokens`).
 

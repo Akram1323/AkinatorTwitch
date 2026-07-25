@@ -18,8 +18,13 @@ test('optionalAuth traite un access token révoqué comme anonyme (POST /api/gam
         .send({ username: OWNER.username, password: OWNER.password });
     const ownerAccess = getCookie(ownerLogin, 'access_token');
 
-    const start = await request(app).post('/api/game/start')
+    // POST /api/game/start est mutant (il débite un jeton) : token CSRF requis
+    const ownerCsrf = await request(app).get('/api/csrf-token')
         .set('Cookie', `access_token=${ownerAccess}`);
+
+    const start = await request(app).post('/api/game/start')
+        .set('Cookie', `access_token=${ownerAccess}`)
+        .set('X-CSRF-Token', ownerCsrf.body.data.csrfToken);
     assert.strictEqual(start.status, 200);
     const gameId = start.body.data.gameId;
 

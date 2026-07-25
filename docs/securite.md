@@ -20,7 +20,11 @@ défense cohérente sur trois axes : **authentification**, **traçabilité**,
 | **Helmet + CSP** | Scripts sans `unsafe-inline`, HSTS preload | Réduit la surface XSS et force HTTPS. |
 | **Sanitization des entrées** | Nettoyage récursif, **hors champs sensibles** | Filtre les payloads dangereux **sans** corrompre mots de passe / codes 2FA avant hachage. |
 | **Rate limiting différencié** | global / login (anti-brute-force) / register / 2FA | Limite l'abus par catégorie de risque. Store Redis optionnel (multi-instance). |
-| **Verrouillage de compte** | 15 min après 5 échecs (`locked_until`) | Ralentit le credential stuffing ciblé. |
+| **Verrouillage de compte** | 15 min après 5 échecs (`locked_until`), **jamais prolongé tant qu'il est actif** | Ralentit le credential stuffing ciblé, sans offrir un déni de service : sinon, connaître un pseudo suffirait à garder un compte fermé indéfiniment. |
+| **Horodatages SQLite lus en UTC** | `services/sqliteDate.js`, **fail-closed** sur valeur illisible | `new Date('2026-07-25 10:00:00')` interprète la chaîne en heure *locale* : hors UTC, un verrou paraissait expiré dès sa pose. Testé sous 4 fuseaux imposés, la CI tournant en UTC ne l'aurait jamais vu. |
+| **CSRF** | Global sur `tokens`/`a2f`/`avatar`/`admin`, route par route sur `/game/start` et `/auth/claim-daily` ; middleware **fail-closed** | Défense en profondeur derrière `sameSite: 'strict'`. Le middleware exige `req.user`, donc doit être monté **après** `authenticateToken` — l'ordre inverse le neutralise silencieusement. |
+| **Projection des réponses** | Liste blanche de colonnes sur les routes admin (`projectUser`) | Une ligne `users` brute exposerait `password_hash` et `a2f_secret`. Liste blanche et non noire : une future colonne sensible reste privée par défaut. |
+| **Contrôle de propriété (IDOR)** | `/game/choose` et `/game/recommend` valident tout `gameId` fourni, y compris sans session | Ces routes sont sous `optionalAuth` : ne contrôler que les appelants authentifiés laisse les anonymes écrire dans la partie d'autrui. |
 | **CORS** | Origines contrôlées, fermé par défaut en prod | Empêche l'usage cross-origin non autorisé. |
 
 ## Authentification moderne
