@@ -173,7 +173,9 @@ La sécurité est au cœur du projet. Mesures implémentées :
 
 ## 📡 API
 
-Base : `/api`. 🔒 = authentification requise (JWT), 👑 = réservé aux administrateurs.
+Base : `/api`. 🔒 = authentification requise (JWT), 👑 = réservé aux administrateurs,
+🛡️ = token CSRF requis en plus (toutes les routes mutantes de `/api/tokens`, `/api/a2f`,
+`/api/avatar`, `/api/admin` le sont ; ailleurs c'est signalé route par route).
 
 ### Auth — `/api/auth`
 | Méthode | Route | Description |
@@ -182,7 +184,7 @@ Base : `/api`. 🔒 = authentification requise (JWT), 👑 = réservé aux admin
 | POST | `/login` | Connexion |
 | POST | `/verify-login-a2f` | Vérification du second facteur à la connexion |
 | GET | `/me` 🔒 | Profil utilisateur |
-| POST | `/claim-daily` 🔒 | Récupérer les jetons quotidiens |
+| POST | `/claim-daily` 🔒 🛡️ | Récupérer les jetons quotidiens |
 | POST | `/change-password` 🔒 | Changer le mot de passe |
 | POST | `/forgot-password` | Réinitialisation du mot de passe |
 | POST | `/logout` 🔒 | Déconnexion (révoque access + refresh) |
@@ -193,9 +195,9 @@ Base : `/api`. 🔒 = authentification requise (JWT), 👑 = réservé aux admin
 |---------|-------|-------------|
 | GET | `/tree` | Arbre de décision complet |
 | GET | `/node/:id/children` | Enfants d'un nœud |
-| POST | `/start` 🔒 | Démarrer une partie (consomme 1 jeton) |
-| POST | `/choose` | Sélectionner une option |
-| POST | `/recommend` | Obtenir les recommandations |
+| POST | `/start` 🔒 🛡️ | Démarrer une partie (consomme 1 jeton) |
+| POST | `/choose` | Sélectionner une option — un `gameId` fourni doit appartenir à l'appelant |
+| POST | `/recommend` | Obtenir les recommandations — idem `/choose` |
 | GET | `/history` 🔒 | Historique des parties |
 | GET | `/leaderboard` | Classement |
 | GET | `/popular` | Jeux populaires |
@@ -206,7 +208,7 @@ Base : `/api`. 🔒 = authentification requise (JWT), 👑 = réservé aux admin
 |---------|-------|-------------|
 | GET | `/balance` 🔒 | Solde de jetons |
 | GET | `/transactions` 🔒 | Historique des transactions |
-| POST | `/gift` | Jetons gratuits (démo) |
+| POST | `/gift` 🔒 🛡️ | Claim quotidien (même robinet que `/api/auth/claim-daily`, 3 jetons) |
 
 ### 2FA — `/api/a2f` 🔒
 `POST /setup` · `POST /verify-setup` · `POST /verify` · `POST /disable` · `GET /status`
@@ -223,7 +225,13 @@ admin (filtre `event_type=admin.user.tokens`).
 ## 🪙 Jetons
 
 Les jetons s'obtiennent de deux façons :
-- **Claim quotidien** (`POST /api/auth/claim-daily`) — jetons gratuits, une fois par jour.
+- **Claim quotidien** — **3 jetons** gratuits, **une fois par jour**. Deux routes exposent le
+  *même* robinet (elles partagent la colonne `last_daily_claim`) : `POST /api/auth/claim-daily`
+  et `POST /api/tokens/gift`. Logique commune dans `services/dailyTokens.js` : réclamer par
+  l'une consomme le claim du jour pour l'autre, et les deux répondent alors **`429`** avec le
+  même message. `/gift` accepte encore un champ `amount` dans le corps pour compatibilité, mais
+  **il est ignoré** — le gain est toujours de 3 jetons. Chaque claim est tracé comme transaction
+  de type `daily`. Les deux routes exigent un **token CSRF**.
 - **Attribution par un administrateur** (`POST /api/admin/users/:id/tokens`) — body
   `{ action: 'add'|'set', amount, reason }`. `add` incrémente le solde, `set` le fixe à une
   valeur absolue (correction exceptionnelle). La `reason` est **obligatoire** (≤ 200 caractères).
