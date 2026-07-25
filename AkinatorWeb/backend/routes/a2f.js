@@ -62,7 +62,10 @@ router.post('/setup', authenticateToken, async (req, res) => {
             success: true,
             data: {
                 qrCode: qrCodeDataUrl,
-                // Secret non exposé pour sécurité (utiliser uniquement le QR code)
+                // Le QR code encode déjà ce secret en clair : le renvoyer en texte
+                // n'ajoute aucune exposition et permet l'appairage manuel (poste
+                // sans caméra, lecteur d'écran, application sans scanner).
+                secret,
                 otpauthUrl: secretObj.otpauth_url
             }
         });
