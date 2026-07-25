@@ -12,8 +12,56 @@ const { v4: uuidv4 } = require('uuid');
 const { queries } = require('../services/database');
 const igdb = require('../services/igdb');
 const { authenticateToken, optionalAuth } = require('../middleware/security');
+const { csrfProtection } = require('../middleware/csrf');
 
 const router = express.Router();
+
+/**
+ * Vérifie qu'un gameId fourni appartient bien à l'appelant (protection IDOR).
+ *
+ * Le contrôle s'applique AUSSI aux appels anonymes : une partie a toujours un
+ * propriétaire authentifié (POST /api/game/start exige authenticateToken), donc
+ * un appelant sans session ne peut jamais en manipuler une. Une partie orpheline
+ * (user_id NULL via ON DELETE SET NULL) n'appartient plus à personne.
+ *
+ * Le 401 sur appelant non authentifié n'est pas cosmétique : ces routes sont sous
+ * `optionalAuth`, qui ne renvoie jamais 401 de lui-même. Le propriétaire légitime
+ * dont l'access token a expiré en cours de partie (15 min) arrive donc ici sans
+ * `req.user`. Un 403 lui serait fatal — le client ne rejoue que sur 401 (cf.
+ * frontend/js/api.js) — et lui ferait perdre sa partie ET son jeton. Avec un 401,
+ * le refresh silencieux s'enclenche et la requête est rejouée de façon transparente.
+ *
+ * @param {*} gameId Identifiant de partie fourni par le client (peut être absent)
+ * @param {object|undefined} user Utilisateur authentifié (req.user), sinon undefined
+ * @returns {{status: number, error: string}|null} Erreur à renvoyer, ou null si l'accès est autorisé
+ */
+function verifierAccesPartie(gameId, user) {
+    // Aucun gameId : jeu anonyme sans persistance, rien à contrôler
+    if (gameId === undefined || gameId === null || gameId === '') {
+        return null;
+    }
+
+    if (typeof gameId !== 'string') {
+        return { status: 400, error: 'gameId invalide' };
+    }
+
+    // Session absente ou expirée : 401 pour déclencher le refresh côté client
+    if (!user) {
+        return { status: 401, error: 'Session requise pour reprendre cette partie' };
+    }
+
+    const game = queries.games.findById.get(gameId);
+    if (!game) {
+        return { status: 404, error: 'Partie non trouvée' };
+    }
+
+    // Partie d'autrui, ou partie orpheline (user_id NULL via ON DELETE SET NULL)
+    if (!game.user_id || game.user_id !== user.id) {
+        return { status: 403, error: 'Accès non autorisé à cette partie' };
+    }
+
+    return null;
+}
 
 /**
  * GET /api/game/tree
@@ -84,8 +132,12 @@ router.get('/node/:id/children', (req, res) => {
 /**
  * POST /api/game/start
  * Démarre une nouvelle partie (consomme un jeton)
+ *
+ * `csrfProtection` est appliqué route par route : le router /api/game est
+ * majoritairement public et n'est donc pas protégé globalement, mais /start est
+ * mutant et DÉBITE un jeton — il mérite la même protection que /api/tokens.
  */
-router.post('/start', authenticateToken, (req, res) => {
+router.post('/start', authenticateToken, csrfProtection, (req, res) => {
     try {
         const user = queries.users.findById.get(req.user.id);
 
@@ -160,21 +212,13 @@ router.post('/choose', optionalAuth, (req, res) => {
             });
         }
 
-        // Si un utilisateur est authentifié et qu'un gameId est fourni, vérifier la propriété (protection IDOR)
-        if (req.user && gameId) {
-            const game = queries.games.findById.get(gameId);
-            if (!game) {
-                return res.status(404).json({
-                    success: false,
-                    error: 'Partie non trouvée'
-                });
-            }
-            if (game.user_id !== req.user.id) {
-                return res.status(403).json({
-                    success: false,
-                    error: 'Accès non autorisé à cette partie'
-                });
-            }
+        // Un gameId fourni est toujours contrôlé, que l'appelant soit authentifié ou non (protection IDOR)
+        const erreurPartie = verifierAccesPartie(gameId, req.user);
+        if (erreurPartie) {
+            return res.status(erreurPartie.status).json({
+                success: false,
+                error: erreurPartie.error
+            });
         }
 
         // Récupérer le nœud sélectionné
@@ -272,21 +316,13 @@ router.post('/recommend', optionalAuth, async (req, res) => {
             });
         }
 
-        // Si un utilisateur est authentifié et qu'un gameId est fourni, vérifier la propriété (protection IDOR)
-        if (req.user && gameId) {
-            const game = queries.games.findById.get(gameId);
-            if (!game) {
-                return res.status(404).json({
-                    success: false,
-                    error: 'Partie non trouvée'
-                });
-            }
-            if (game.user_id !== req.user.id) {
-                return res.status(403).json({
-                    success: false,
-                    error: 'Accès non autorisé à cette partie'
-                });
-            }
+        // Un gameId fourni est toujours contrôlé, que l'appelant soit authentifié ou non (protection IDOR)
+        const erreurPartie = verifierAccesPartie(gameId, req.user);
+        if (erreurPartie) {
+            return res.status(erreurPartie.status).json({
+                success: false,
+                error: erreurPartie.error
+            });
         }
 
         // Transformer les filtres pour le service IGDB
