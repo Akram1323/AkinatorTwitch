@@ -166,7 +166,7 @@ router.post('/verify', a2fLimiter, authenticateToken, async (req, res) => {
  * POST /api/a2f/disable
  * Désactive l'A2F
  */
-router.post('/disable', authenticateToken, async (req, res) => {
+router.post('/disable', a2fLimiter, authenticateToken, async (req, res) => {
     try {
         const { code, password } = req.body;
         const bcrypt = require('bcrypt');
@@ -185,6 +185,7 @@ router.post('/disable', authenticateToken, async (req, res) => {
         // Facteur 1 : le mot de passe, toujours exigé
         const validPassword = await bcrypt.compare(password, user.password_hash);
         if (!validPassword) {
+            appendAudit('a2f.disable.failed', { userId: user.id, details: { raison: 'password' } });
             return res.status(401).json({ success: false, error: 'Mot de passe incorrect' });
         }
 
@@ -198,11 +199,13 @@ router.post('/disable', authenticateToken, async (req, res) => {
             if (saisie.length === 10) {
                 methode = 'backup_code';
                 if (!consumeBackupCode(user.id, saisie)) {
+                    appendAudit('a2f.disable.failed', { userId: user.id, details: { raison: 'backup_code' } });
                     return res.status(401).json({ success: false, error: 'Code de secours invalide' });
                 }
             } else {
                 const totpResult = verifyTotp(user, saisie);
                 if (!totpResult.ok) {
+                    appendAudit('a2f.disable.failed', { userId: user.id, details: { raison: 'totp' } });
                     return res.status(401).json({ success: false, error: totpResult.error });
                 }
             }
@@ -235,7 +238,7 @@ router.post('/disable', authenticateToken, async (req, res) => {
  * POST /api/a2f/backup-codes
  * Regénère les codes de secours (affichés une seule fois).
  */
-router.post('/backup-codes', authenticateToken, async (req, res) => {
+router.post('/backup-codes', a2fLimiter, authenticateToken, async (req, res) => {
     try {
         const user = queries.users.findById.get(req.user.id);
         if (!user || !user.a2f_enabled) {

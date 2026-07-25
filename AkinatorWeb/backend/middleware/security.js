@@ -98,11 +98,15 @@ const registerLimiter = rateLimit({
 });
 
 /**
- * Rate Limiter dédié à la vérification 2FA (anti brute-force sur 6 chiffres)
+ * Rate Limiter dédié aux opérations 2FA sensibles (anti brute-force sur 6 chiffres),
+ * partagé par /verify, /verify-setup, /disable et /backup-codes.
+ * max: 10 et non 5 — js/api.js:119 rejoue automatiquement toute réponse 401, donc
+ * chaque tentative ratée de l'utilisateur consomme deux crédits du compteur ; 10
+ * conserve le budget réel visé (5 tentatives) plutôt que de le diviser par deux.
  */
 const a2fLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: config.isTest ? 10000 : 5,
+    max: config.isTest ? 10000 : 10,
     message: {
         success: false,
         error: 'Trop de tentatives de vérification 2FA, réessayez dans 15 minutes'

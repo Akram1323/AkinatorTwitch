@@ -104,6 +104,44 @@ test('mot de passe incorrect refusé même avec un code valide', async () => {
         'la 2FA doit rester active');
 });
 
+test('un mauvais mot de passe ne consomme pas le code de secours fourni avec', async () => {
+    const { ctx, codes } = await activerA2F('a2fdis9');
+
+    const refus = await disable(ctx, { password: 'Mauvais!MotDePasse#42', code: codes[0] });
+    assert.strictEqual(refus.status, 401);
+
+    // Sans cette assertion, une inversion future de l'ordre des contrôles (facteur 2
+    // avant facteur 1) brûlerait le code de secours à chaque simple faute de frappe
+    // sur le mot de passe, sans que la suite verte ne le remarque. On rejoue avec le
+    // bon mot de passe : le code doit toujours être utilisable.
+    const rejeu = await disable(ctx, { password: PASSWORD, code: codes[0] });
+    assert.strictEqual(rejeu.status, 200,
+        `le code de secours doit rester utilisable après un refus par mot de passe, reçu ${rejeu.status} (${rejeu.body.error})`);
+});
+
+test('bon mot de passe, aucun second facteur fourni → refusé (verrouille la garde actuelle)', async () => {
+    const { ctx } = await activerA2F('a2fdis7');
+
+    const res = await disable(ctx, { password: PASSWORD });
+
+    assert.strictEqual(res.status, 401,
+        `attendu 401 (aucun code fourni ne doit jamais suffire), reçu ${res.status}`);
+    assert.strictEqual(
+        db.prepare('SELECT a2f_enabled FROM users WHERE id = ?').get(ctx.userId).a2f_enabled, 1,
+        'la 2FA doit rester active');
+});
+
+test('code de secours à 10 caractères non hexadécimaux refusé', async () => {
+    const { ctx } = await activerA2F('a2fdis8');
+
+    const res = await disable(ctx, { password: PASSWORD, code: 'zzzzzzzzzz' });
+
+    assert.strictEqual(res.status, 401);
+    assert.strictEqual(
+        db.prepare('SELECT a2f_enabled FROM users WHERE id = ?').get(ctx.userId).a2f_enabled, 1,
+        'la 2FA doit rester active');
+});
+
 test('mot de passe absent → 400, jamais 500', async () => {
     const { ctx, codes } = await activerA2F('a2fdis5');
 
