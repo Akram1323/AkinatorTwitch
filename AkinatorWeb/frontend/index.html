@@ -536,6 +536,9 @@
                         <i class="fa-solid fa-lock icon"></i> Activer l'A2F
                     </button>
                     <p class="settings-note">L'A2F utilise une application comme Google Authenticator ou Authy.</p>
+                    <button class="btn btn-ghost" id="regenerateBackupCodes" style="display:none;margin-top:var(--spacing-sm);">
+                        <i class="fa-solid fa-key icon"></i> Régénérer mes codes de secours
+                    </button>
                 </div>
 
                 <!-- Déconnexion -->
@@ -627,6 +630,31 @@
                 
                 <button class="btn btn-primary btn-full" id="verifyA2FSetup">
                     Activer l'A2F
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Backup Codes Modal -->
+    <div class="modal" id="backupCodesModal">
+        <div class="modal-backdrop" data-close="backupCodesModal"></div>
+        <div class="modal-content">
+            <button class="modal-close" data-close="backupCodesModal">×</button>
+            <h2><i class="fa-solid fa-key icon-title"></i> Vos codes de secours</h2>
+            <div class="info-box" style="background:rgba(224,85,97,0.1);border:1px solid rgba(224,85,97,0.3);border-radius:var(--radius-sm);padding:var(--spacing-sm);margin-bottom:var(--spacing-md);font-size:0.85rem;color:var(--text-secondary);">
+                <i class="fa-solid fa-triangle-exclamation" style="margin-right:6px;"></i>
+                Conservez-les hors de votre téléphone. Chaque code ne sert
+                <strong>qu'une fois</strong> et ils ne seront <strong>plus jamais affichés</strong>.
+                Ils vous permettent de vous connecter si vous perdez votre application
+                d'authentification.
+            </div>
+            <ul id="backupCodesList" class="backup-codes-list"></ul>
+            <div class="results-actions">
+                <button class="btn btn-primary" id="copyBackupCodes">
+                    <i class="fa-solid fa-copy icon"></i> Copier
+                </button>
+                <button class="btn btn-ghost" id="downloadBackupCodes">
+                    <i class="fa-solid fa-download icon"></i> Télécharger
                 </button>
             </div>
         </div>

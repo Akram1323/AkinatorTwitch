@@ -234,7 +234,12 @@ function attachEventListeners() {
     
     // A2F setup modal
     document.getElementById('verifyA2FSetup').addEventListener('click', verifyA2FSetup);
-    
+
+    // Codes de secours 2FA
+    document.getElementById('copyBackupCodes').addEventListener('click', copierCodesSecours);
+    document.getElementById('downloadBackupCodes').addEventListener('click', telechargerCodesSecours);
+    document.getElementById('regenerateBackupCodes').addEventListener('click', regenererCodesSecours);
+
     // A2F login modal
     document.getElementById('verifyA2FLogin').addEventListener('click', verifyA2FLogin);
     
@@ -1341,11 +1346,89 @@ async function verifyA2FSetup() {
             closeModal('a2fSetupModal');
             updateA2FStatus();
             showToast('A2F activé avec succès !', 'success');
+            // Unique occasion de les montrer : ils ne sont stockés que hashés.
+            afficherCodesSecours(response.data.codes);
         }
     } catch (error) {
         hideLoading();
         showToast(error.message || 'Code incorrect', 'error');
     }
+}
+
+/** Codes actuellement affichés, pour les boutons Copier / Télécharger. */
+var codesSecoursAffiches = [];
+
+function afficherCodesSecours(codes) {
+    codesSecoursAffiches = codes || [];
+
+    var liste = document.getElementById('backupCodesList');
+    liste.innerHTML = '';
+    codesSecoursAffiches.forEach(function(code) {
+        var li = document.createElement('li');
+        li.textContent = code;
+        liste.appendChild(li);
+    });
+
+    showModal('backupCodesModal');
+}
+
+async function regenererCodesSecours() {
+    if (!confirm('Générer de nouveaux codes de secours ?\n\nVos codes actuels seront définitivement invalidés.')) {
+        return;
+    }
+
+    try {
+        showLoading('Génération des codes...');
+        var response = await API.generateBackupCodes();
+        hideLoading();
+
+        if (response.success) {
+            afficherCodesSecours(response.data.codes);
+            showToast('Nouveaux codes générés, les anciens sont invalidés', 'success');
+        }
+    } catch (error) {
+        hideLoading();
+        showToast(error.message || 'Erreur lors de la génération', 'error');
+    }
+}
+
+async function copierCodesSecours() {
+    var texte = codesSecoursAffiches.join('\n');
+
+    // navigator.clipboard exige un contexte sécurisé (HTTPS ou localhost) :
+    // sur un déploiement HTTP il est absent, on dégrade au lieu d'échouer en silence.
+    if (navigator.clipboard && window.isSecureContext) {
+        try {
+            await navigator.clipboard.writeText(texte);
+            showToast('Codes copiés dans le presse-papiers', 'success');
+            return;
+        } catch (error) { /* on retombe sur la sélection manuelle */ }
+    }
+
+    var liste = document.getElementById('backupCodesList');
+    var selection = window.getSelection();
+    var plage = document.createRange();
+    plage.selectNodeContents(liste);
+    selection.removeAllRanges();
+    selection.addRange(plage);
+    showToast('Copie automatique indisponible : les codes sont sélectionnés, copiez-les', 'warning');
+}
+
+function telechargerCodesSecours() {
+    var contenu = 'Codes de secours AkinatorTwitch\n'
+        + 'Compte : ' + (currentUser ? currentUser.username : '') + '\n'
+        + 'Chaque code ne peut servir qu\'une seule fois.\n\n'
+        + codesSecoursAffiches.join('\n') + '\n';
+
+    var blob = new Blob([contenu], { type: 'text/plain' });
+    var url = URL.createObjectURL(blob);
+    var lien = document.createElement('a');
+    lien.href = url;
+    lien.download = 'akinator-codes-de-secours.txt';
+    document.body.appendChild(lien);
+    lien.click();
+    document.body.removeChild(lien);
+    URL.revokeObjectURL(url);
 }
 
 async function verifyA2FLogin() {
@@ -1410,6 +1493,11 @@ function updateA2FStatus() {
         toggleBtn.onclick = setupA2F;
     }
     // Note: innerHTML ici est sûr car le contenu est statique (pas de données utilisateur)
+
+    var btnRegen = document.getElementById('regenerateBackupCodes');
+    if (btnRegen) {
+        btnRegen.style.display = (currentUser && currentUser.a2fEnabled) ? 'inline-flex' : 'none';
+    }
 }
 
 // ══════════════════════════════════════════════════════════════

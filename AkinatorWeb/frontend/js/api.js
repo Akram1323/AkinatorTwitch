@@ -245,6 +245,10 @@ const API = {
         return this.post('/a2f/disable', { code, password });
     },
 
+    async generateBackupCodes() {
+        return this.post('/a2f/backup-codes', {});
+    },
+
     // ══════════════════════════════════════════════════════════
     // AVATAR
     // ══════════════════════════════════════════════════════════
