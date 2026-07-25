@@ -56,19 +56,27 @@ function cleanupExpiredTokens() {
 }
 
 /**
- * Middleware CSRF pour les routes mutantes (POST, PUT, DELETE)
+ * Middleware CSRF pour les routes mutantes (POST, PUT, DELETE, PATCH)
+ *
+ * Fail-closed : doit impérativement être monté APRÈS `authenticateToken`, car il
+ * s'appuie sur `req.user` pour valider le token. Si `req.user` est absent sur une
+ * méthode mutante, la requête est refusée (403) plutôt que laissée passer — sinon
+ * un mauvais ordre de montage désactiverait silencieusement toute la protection.
  */
 const csrfProtection = (req, res, next) => {
     // Ignorer les méthodes GET, HEAD, OPTIONS
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
         return next();
     }
-    
-    // Vérifier si l'utilisateur est authentifié
+
+    // Fail-closed : pas de contexte utilisateur = pas de vérification possible
     if (!req.user || !req.user.id) {
-        return next(); // Pas de CSRF si pas authentifié (géré par authenticateToken)
+        return res.status(403).json({
+            success: false,
+            error: 'Vérification CSRF impossible : authentification requise'
+        });
     }
-    
+
     // Récupérer le token depuis le header
     const csrfToken = req.headers['x-csrf-token'] || req.body._csrf;
     

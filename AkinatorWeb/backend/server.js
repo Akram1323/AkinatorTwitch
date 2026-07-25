@@ -114,10 +114,16 @@ app.get('/.well-known/security.txt', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/game', gameRoutes);
 
-app.use('/api/tokens', csrfProtection, tokenRoutes);
-app.use('/api/a2f', csrfProtection, a2fRoutes);
-app.use('/api/avatar', csrfProtection, avatarRoutes);
-app.use('/api/admin', csrfProtection, adminRoutes);
+// IMPORTANT : `authenticateToken` DOIT précéder `csrfProtection`.
+// csrfProtection a besoin de `req.user` pour valider le token CSRF ; les routers
+// n'appellent authenticateToken qu'en interne (donc trop tard). Avec l'ordre
+// inverse, `req.user` était toujours undefined et aucune vérification CSRF
+// n'était appliquée. Les appels internes à authenticateToken sont conservés
+// (idempotents) pour que les routers restent sûrs s'ils sont montés ailleurs.
+app.use('/api/tokens', authenticateToken, csrfProtection, tokenRoutes);
+app.use('/api/a2f', authenticateToken, csrfProtection, a2fRoutes);
+app.use('/api/avatar', authenticateToken, csrfProtection, avatarRoutes);
+app.use('/api/admin', authenticateToken, csrfProtection, adminRoutes);
 
 // Route de santé
 app.get('/api/health', (req, res) => {
