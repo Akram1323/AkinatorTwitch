@@ -67,6 +67,15 @@ const API = {
     },
 
     /**
+     * Un échec est-il imputable au token CSRF (manquant, invalide ou expiré) ?
+     * Le serveur répond 403 avec un message contenant « CSRF » dans les trois cas
+     * (cf. backend/middleware/csrf.js).
+     */
+    isCsrfFailure(status, data) {
+        return status === 403 && !!data && typeof data.error === 'string' && /csrf/i.test(data.error);
+    },
+
+    /**
      * Récupère un nouveau token CSRF
      */
     async refreshCSRFToken() {
@@ -114,18 +123,29 @@ const API = {
                 }
             }
 
-            let data;
+            let data = null;
             try {
                 data = await response.json();
             } catch (jsonError) {
-                // Si la réponse n'est pas du JSON valide, créer un objet d'erreur
-                const text = await response.text();
-                console.error(`Réponse non-JSON de ${endpoint}:`, text.substring(0, 200));
-                throw new Error(`Erreur serveur (${response.status}): Réponse invalide`);
+                // Réponse non-JSON : le corps est déjà consommé, on ne peut pas le relire
+                console.error(`Réponse non-JSON de ${endpoint} (${response.status})`);
+            }
+
+            // Token CSRF expiré (durée de vie 60 min, bien plus courte que la session
+            // qui se renouvelle indéfiniment) → en redemander un et rejouer une fois.
+            // Sans cela, un onglet laissé ouvert plus d'une heure voit toutes ses
+            // actions mutantes échouer jusqu'au rechargement complet de la page.
+            if (this.isCsrfFailure(response.status, data) && !isRetry) {
+                await this.refreshCSRFToken();
+                return this.request(endpoint, options, true);
             }
 
             if (!response.ok) {
-                throw new Error(data.error || `Erreur ${response.status}`);
+                throw new Error((data && data.error) || `Erreur ${response.status}`);
+            }
+
+            if (data === null) {
+                throw new Error(`Erreur serveur (${response.status}): Réponse invalide`);
             }
 
             return data;
@@ -229,7 +249,11 @@ const API = {
     // AVATAR
     // ══════════════════════════════════════════════════════════
 
-    async uploadAvatar(file) {
+    // L'upload passe en multipart : il ne peut pas emprunter request() (qui force
+    // un Content-Type JSON), d'où ce chemin dédié — avec le même rejeu sur token
+    // CSRF expiré, sinon un onglet ouvert depuis plus d'une heure ne peut plus
+    // changer d'avatar.
+    async uploadAvatar(file, isRetry = false) {
         const formData = new FormData();
         formData.append('avatar', file);
 
@@ -247,10 +271,20 @@ const API = {
             credentials: 'same-origin'
         });
 
-        const data = await response.json();
+        let data = null;
+        try {
+            data = await response.json();
+        } catch (jsonError) {
+            console.error(`Réponse non-JSON de /avatar/upload (${response.status})`);
+        }
+
+        if (this.isCsrfFailure(response.status, data) && !isRetry) {
+            await this.refreshCSRFToken();
+            return this.uploadAvatar(file, true);
+        }
 
         if (!response.ok) {
-            throw new Error(data.error || `Erreur ${response.status}`);
+            throw new Error((data && data.error) || `Erreur ${response.status}`);
         }
 
         return data;
@@ -300,8 +334,9 @@ const API = {
         return this.get('/tokens/transactions');
     },
 
+    // Même robinet quotidien que claimDaily() : 3 jetons, aucun montant à envoyer
     async claimGift() {
-        return this.post('/tokens/gift', { amount: 5 });
+        return this.post('/tokens/gift', {});
     },
 
     async claimDaily() {
