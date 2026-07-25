@@ -636,8 +636,11 @@
     </div>
 
     <!-- Backup Codes Modal -->
+    <!-- Étape non interruptible : les codes ne sont affichés qu'une seule fois (stockés
+         hashés ensuite). Comme a2fLoginModal, le backdrop ne ferme pas la modale ; seul
+         le bouton × explicite le fait. -->
     <div class="modal" id="backupCodesModal">
-        <div class="modal-backdrop" data-close="backupCodesModal"></div>
+        <div class="modal-backdrop"></div>
         <div class="modal-content">
             <button class="modal-close" data-close="backupCodesModal">×</button>
             <h2><i class="fa-solid fa-key icon-title"></i> Vos codes de secours</h2>

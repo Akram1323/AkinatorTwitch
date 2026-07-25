@@ -35,10 +35,18 @@ function parseSqliteDateUTC(value) {
     return isNaN(date.getTime()) ? null : date;
 }
 
-/** Un compte est-il actuellement verrouillé ? */
+/**
+ * Un compte est-il actuellement verrouillé ?
+ * FAIL-CLOSED, comme services/sqliteDate.js:isStillActive côté serveur (c'est lui
+ * qui décide réellement au login) : locked_until présent mais illisible ⇒ considéré
+ * comme verrouillé. Un horodatage corrompu ne doit jamais faire disparaître le
+ * bouton de déverrouillage.
+ */
 function estVerrouille(user) {
+    if (!user.locked_until) return false;
     var fin = parseSqliteDateUTC(user.locked_until);
-    return fin !== null && fin.getTime() > Date.now();
+    if (!fin) return true;
+    return fin.getTime() > Date.now();
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -229,9 +237,6 @@ function attachEventListeners() {
         logout();
     });
     
-    // A2F toggle
-    document.getElementById('toggleA2F').addEventListener('click', setupA2F);
-    
     // A2F setup modal
     document.getElementById('verifyA2FSetup').addEventListener('click', verifyA2FSetup);
 
@@ -261,6 +266,9 @@ function attachEventListeners() {
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
             document.querySelectorAll('.modal.active').forEach(function(modal) {
+                // Codes de secours : étape non interruptible, même principe que le
+                // backdrop (voir index.html) — seul le bouton × explicite ferme.
+                if (modal.id === 'backupCodesModal') return;
                 closeModal(modal.id);
             });
         }
@@ -380,6 +388,15 @@ function updateUIForLoggedOutUser() {
     document.getElementById('userMenu').style.display = 'none';
     document.getElementById('tokenDisplay').style.display = 'none';
     currentUser = null;
+
+    // Point de passage systématique de la déconnexion (logout() l'appelle sans
+    // recharger la page) : purger les secrets A2F encore affichés pour qu'ils ne
+    // survivent pas dans le DOM/la mémoire pour la session suivante sur ce poste.
+    purgerCodesSecours();
+    var secretCode = document.getElementById('a2fSecretCode');
+    if (secretCode) secretCode.textContent = '';
+    var qrContainer = document.getElementById('qrCodeContainer');
+    if (qrContainer) qrContainer.innerHTML = '';
 }
 
 function updateTokenDisplay(tokens) {
@@ -918,9 +935,12 @@ function displayUsers(users) {
         if (estVerrouille(user)) {
             const lockSpan = document.createElement('span');
             lockSpan.style.cssText = 'color:var(--danger,#e05561);display:block;font-size:0.75rem;';
+            // fin peut être null (locked_until présent mais illisible) : estVerrouille
+            // est fail-closed sur ce cas, l'affichage a besoin d'un libellé de repli.
             const fin = parseSqliteDateUTC(user.locked_until);
-            lockSpan.textContent = '🔒 Verrouillé jusqu\'à ' +
-                fin.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+            lockSpan.textContent = fin
+                ? '🔒 Verrouillé jusqu\'à ' + fin.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+                : '🔒 Verrouillé (échéance inconnue)';
             lockSpan.title = user.failed_login_attempts + ' tentative(s) échouée(s)';
             tdAdmin.appendChild(lockSpan);
         }
@@ -1185,12 +1205,26 @@ function showModal(modalId) {
 
 function closeModal(modalId) {
     document.getElementById(modalId).classList.remove('active');
-    
+
     var errorDiv = document.getElementById(modalId.replace('Modal', 'Error'));
     if (errorDiv) {
         errorDiv.textContent = '';
         errorDiv.style.display = 'none';
     }
+
+    // Les codes de secours ne sont affichés qu'une seule fois (stockés hashés
+    // ensuite) : sur un poste partagé, les laisser dans le DOM/la mémoire après
+    // la fermeture de la modale les rend lisibles (F12) à la personne suivante.
+    if (modalId === 'backupCodesModal') {
+        purgerCodesSecours();
+    }
+}
+
+/** Vide les codes de secours affichés, du DOM et de la mémoire. */
+function purgerCodesSecours() {
+    codesSecoursAffiches = [];
+    var liste = document.getElementById('backupCodesList');
+    if (liste) liste.innerHTML = '';
 }
 
 function showLoginModal() {
@@ -1468,7 +1502,7 @@ function telechargerCodesSecours() {
     document.body.appendChild(lien);
     lien.click();
     document.body.removeChild(lien);
-    URL.revokeObjectURL(url);
+    setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
 }
 
 async function verifyA2FLogin() {
