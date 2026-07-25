@@ -25,6 +25,9 @@ const { encryptIP, hashIPForLogging } = require('../services/encryption');
 const tokenService = require('../services/tokenService');
 const { appendAudit } = require('../services/auditService');
 const { validateNewPassword } = require('../services/passwordService');
+const { claimDailyTokens, ALREADY_CLAIMED } = require('../services/dailyTokens');
+const { parseSqliteDate, isStillActive } = require('../services/sqliteDate');
+const { csrfProtection } = require('../middleware/csrf');
 
 const router = express.Router();
 
@@ -49,8 +52,11 @@ function clearAuthCookies(res) {
 
 // Constantes de sécurité
 const BCRYPT_ROUNDS = 12;
-const MAX_LOGIN_ATTEMPTS = 5;
-const LOCKOUT_DURATION_MINUTES = 15;
+// La politique de verrouillage (verrou posé à partir de la 5e tentative échouée,
+// pour 15 minutes, jamais prolongé tant qu'il est actif) est appliquée par la
+// requête SQL `incrementFailedLogin` — cf. services/database.js.
+// Elle n'est JAMAIS exposée dans une réponse HTTP : le nombre de tentatives
+// restantes serait un oracle d'énumération de comptes.
 
 /**
  * POST /api/auth/register
@@ -186,21 +192,52 @@ router.post('/login',
             const rawIP = req.ip || req.connection.remoteAddress || req.socket.remoteAddress || 'unknown';
             const encryptedIP = encryptIP(rawIP);
 
+            // Réponse d'échec UNIQUE : strictement identique que le compte existe ou non,
+            // qu'il soit verrouillé ou non. Aucun compteur de tentatives (oracle d'énumération).
+            const genericFailure = { success: false, error: 'Identifiants incorrects' };
+
             // Trouver l'utilisateur
             const user = queries.users.findByUsername.get(username);
-            
-            // Message générique pour ne pas révéler si l'utilisateur existe
+
+            // 1) Utilisateur introuvable : hash factice pour égaliser le temps de réponse
+            //    (anti-énumération par timing), puis échec générique.
             if (!user) {
                 await bcrypt.hash('dummy', BCRYPT_ROUNDS);
-                return res.status(401).json({
-                    success: false,
-                    error: 'Identifiants incorrects'
-                });
+                return res.status(401).json(genericFailure);
             }
 
-            // Vérifier si le compte est verrouillé
-            if (user.locked_until && new Date(user.locked_until) > new Date()) {
-                const remainingMinutes = Math.ceil((new Date(user.locked_until) - new Date()) / 60000);
+            // 2) Utilisateur trouvé : le mot de passe est vérifié AVANT toute autre chose,
+            //    pour qu'aucun état du compte (verrou compris) ne fuite vers un anonyme.
+            const validPassword = await bcrypt.compare(password, user.password_hash);
+
+            // 3) Mot de passe invalide : on comptabilise l'échec (et le verrou éventuel à
+            //    partir de la 5e tentative) mais la réponse reste rigoureusement identique
+            //    au cas « utilisateur introuvable ». L'audit, lui, reste précis (interne).
+            if (!validPassword) {
+                // Le verrou n'est jamais prolongé par une tentative supplémentaire
+                // (garde dans incrementFailedLogin) : sans cela, connaître un pseudo
+                // suffirait à maintenir un compte fermé indéfiniment.
+                const dejaVerrouille = isStillActive(user.locked_until);
+                queries.users.incrementFailedLogin.run(user.id);
+                // L'audit reste précis — c'est interne, seule la réponse HTTP est muette.
+                appendAudit('auth.login.failed', {
+                    userId: user.id,
+                    ipHash: hashIPForLogging(rawIP),
+                    details: { username, compteVerrouille: dejaVerrouille }
+                });
+                return res.status(401).json(genericFailure);
+            }
+
+            // 4) Mot de passe valide mais compte verrouillé : seul cas où l'existence du
+            //    compte est révélée — l'appelant a déjà prouvé qu'il connaît le mot de passe.
+            //    C'est un REFUS : ni reset des tentatives, ni levée du verrou, ni jeton, ni session.
+            if (isStillActive(user.locked_until)) {
+                const lockedUntil = parseSqliteDate(user.locked_until);
+                // Horodatage illisible : isStillActive est fail-closed et nous amène ici
+                // sans date exploitable — on annonce la durée nominale du verrou.
+                const remainingMinutes = lockedUntil
+                    ? Math.max(1, Math.ceil((lockedUntil - new Date()) / 60000))
+                    : 15;
                 appendAudit('auth.login.locked', { userId: user.id, ipHash: hashIPForLogging(rawIP) });
                 return res.status(423).json({
                     success: false,
@@ -208,30 +245,7 @@ router.post('/login',
                 });
             }
 
-            // Vérifier le mot de passe
-            const validPassword = await bcrypt.compare(password, user.password_hash);
-            
-            if (!validPassword) {
-                queries.users.incrementFailedLogin.run(user.id);
-                
-                const attempts = user.failed_login_attempts + 1;
-                const remaining = MAX_LOGIN_ATTEMPTS - attempts;
-                
-                if (remaining <= 0) {
-                    appendAudit('auth.login.locked', { userId: user.id, ipHash: hashIPForLogging(rawIP) });
-                    return res.status(423).json({
-                        success: false,
-                        error: `Trop de tentatives. Compte verrouillé pour ${LOCKOUT_DURATION_MINUTES} minutes.`
-                    });
-                }
-
-                appendAudit('auth.login.failed', { userId: user.id, ipHash: hashIPForLogging(rawIP), details: { username } });
-                return res.status(401).json({
-                    success: false,
-                    error: `Identifiants incorrects. ${remaining} tentative(s) restante(s).`
-                });
-            }
-
+            // 5) Mot de passe valide et compte non verrouillé : connexion normale.
             // Vérifier si A2F est activé
             if (user.a2f_enabled) {
                 // Ne pas donner le token complet, juste un token temporaire pour la vérification A2F
@@ -360,12 +374,19 @@ router.get('/me', authenticateToken, (req, res) => {
 
 /**
  * POST /api/auth/claim-daily
- * Réclamer les 3 jetons quotidiens gratuits
+ * Réclamer les jetons quotidiens gratuits.
+ * MÊME robinet que POST /api/tokens/gift : logique commune dans
+ * services/dailyTokens.js, pour que les deux routes restent indissociables.
+ *
+ * `csrfProtection` est appliqué ici route par route (le router /api/auth ne l'est
+ * pas globalement : login et register n'ont pas encore de session). Sans cela,
+ * cette route mutante serait la seule porte du robinet quotidien sans protection
+ * CSRF, alors que sa jumelle /api/tokens/gift l'exige.
  */
-router.post('/claim-daily', authenticateToken, (req, res) => {
+router.post('/claim-daily', authenticateToken, csrfProtection, (req, res) => {
     try {
         const user = queries.users.findById.get(req.user.id);
-        
+
         if (!user) {
             return res.status(404).json({
                 success: false,
@@ -373,29 +394,18 @@ router.post('/claim-daily', authenticateToken, (req, res) => {
             });
         }
 
-        const dailyCheck = queries.users.canClaimDaily.get(user.id);
-        
-        if (!dailyCheck || dailyCheck.can_claim !== 1) {
-            return res.status(400).json({
-                success: false,
-                error: 'Vous avez déjà réclamé vos jetons aujourd\'hui. Revenez demain !'
-            });
+        const claim = claimDailyTokens(user.id);
+
+        if (!claim) {
+            return res.status(ALREADY_CLAIMED.status).json(ALREADY_CLAIMED.body);
         }
 
-        queries.users.updateDailyClaim.run(user.id);
-        queries.transactions.create.run(uuidv4(), user.id, 'daily', 3, null, 'completed');
-
-        const updatedUser = queries.users.findById.get(user.id);
-
-        console.log(`🎁 Jetons quotidiens: ${user.username} +3 jetons`);
+        console.log(`🎁 Jetons quotidiens: ${user.username} +${claim.tokensAdded} jetons`);
 
         res.json({
             success: true,
-            message: '3 jetons quotidiens ajoutés !',
-            data: {
-                tokensAdded: 3,
-                newBalance: updatedUser.tokens
-            }
+            message: `${claim.tokensAdded} jetons quotidiens ajoutés !`,
+            data: claim
         });
 
     } catch (error) {

@@ -274,12 +274,19 @@ function initializeQueries() {
             WHERE id = ?
         `),
         incrementGames: db.prepare('UPDATE users SET total_games = total_games + 1 WHERE id = ?'),
+        // Verrou posé à partir de la 5e tentative échouée, pour 15 minutes.
+        // La condition `locked_until IS NULL OR locked_until <= datetime('now')`
+        // est essentielle : sans elle, chaque tentative sur un compte DÉJÀ verrouillé
+        // repousserait l'échéance, et connaître un simple pseudo suffirait à garder
+        // un compte fermé indéfiniment (déni de service ciblé).
         incrementFailedLogin: db.prepare(`
-            UPDATE users SET 
+            UPDATE users SET
                 failed_login_attempts = failed_login_attempts + 1,
-                locked_until = CASE 
-                    WHEN failed_login_attempts >= 4 THEN datetime('now', '+15 minutes')
-                    ELSE locked_until 
+                locked_until = CASE
+                    WHEN failed_login_attempts >= 4
+                         AND (locked_until IS NULL OR locked_until <= datetime('now'))
+                    THEN datetime('now', '+15 minutes')
+                    ELSE locked_until
                 END
             WHERE id = ?
         `),
@@ -287,12 +294,6 @@ function initializeQueries() {
             UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?
         `),
         getLastDailyClaim: db.prepare('SELECT last_daily_claim FROM users WHERE id = ?'),
-        updateDailyClaim: db.prepare(`
-            UPDATE users SET 
-                last_daily_claim = date('now'),
-                tokens = tokens + 3
-            WHERE id = ?
-        `),
         canClaimDaily: db.prepare(`
             SELECT CASE 
                 WHEN last_daily_claim IS NULL THEN 1
@@ -301,8 +302,10 @@ function initializeQueries() {
             END as can_claim
             FROM users WHERE id = ?
         `),
-        // Requête atomique pour le gift : vérifie ET met à jour en une seule opération (protection race condition)
-        claimGiftAtomic: db.prepare(`
+        // Robinet quotidien : vérifie ET met à jour en une seule requête conditionnelle.
+        // Seule voie d'écriture de `last_daily_claim` (cf. services/dailyTokens.js) —
+        // aucune fenêtre entre le contrôle et l'écriture, donc pas de double claim.
+        claimDailyAtomic: db.prepare(`
             UPDATE users 
             SET last_daily_claim = date('now'), tokens = tokens + ? 
             WHERE id = ? AND (last_daily_claim IS NULL OR last_daily_claim < date('now'))
