@@ -239,6 +239,7 @@ function attachEventListeners() {
     document.getElementById('copyBackupCodes').addEventListener('click', copierCodesSecours);
     document.getElementById('downloadBackupCodes').addEventListener('click', telechargerCodesSecours);
     document.getElementById('regenerateBackupCodes').addEventListener('click', regenererCodesSecours);
+    document.getElementById('confirmDisableA2F').addEventListener('click', desactiverA2F);
 
     // A2F login modal
     document.getElementById('verifyA2FLogin').addEventListener('click', verifyA2FLogin);
@@ -1392,6 +1393,45 @@ async function regenererCodesSecours() {
     }
 }
 
+async function desactiverA2F() {
+    var password = document.getElementById('a2fDisablePassword').value;
+    var code = document.getElementById('a2fDisableCode').value.trim();
+    var errorDiv = document.getElementById('a2fDisableError');
+
+    errorDiv.textContent = '';
+    errorDiv.style.display = 'none';
+
+    if (!password) {
+        errorDiv.textContent = 'Mot de passe requis';
+        errorDiv.style.display = 'block';
+        return;
+    }
+
+    // 6 chiffres = TOTP, 10 caractères hexadécimaux = code de secours
+    if (!/^[0-9]{6}$/.test(code) && !/^[0-9a-fA-F]{10}$/.test(code)) {
+        errorDiv.textContent = 'Entrez un code à 6 chiffres ou un code de secours à 10 caractères';
+        errorDiv.style.display = 'block';
+        return;
+    }
+
+    try {
+        showLoading('Désactivation...');
+        var response = await API.disableA2F(code, password);
+        hideLoading();
+
+        if (response.success) {
+            currentUser.a2fEnabled = false;
+            closeModal('a2fDisableModal');
+            updateA2FStatus();
+            showToast('A2F désactivé', 'success');
+        }
+    } catch (error) {
+        hideLoading();
+        errorDiv.textContent = error.message || 'Erreur lors de la désactivation';
+        errorDiv.style.display = 'block';
+    }
+}
+
 async function copierCodesSecours() {
     var texte = codesSecoursAffiches.join('\n');
 
@@ -1485,7 +1525,10 @@ function updateA2FStatus() {
         statusDiv.innerHTML = '<span class="a2f-badge enabled">Activé</span><p>Votre compte est protégé par l\'A2F.</p>';
         toggleBtn.innerHTML = '<i class="fa-solid fa-lock-open icon"></i> Désactiver l\'A2F';
         toggleBtn.onclick = function() {
-            showToast('Pour désactiver l\'A2F, contactez le support.', 'info');
+            document.getElementById('a2fDisablePassword').value = '';
+            document.getElementById('a2fDisableCode').value = '';
+            document.getElementById('a2fDisableError').style.display = 'none';
+            showModal('a2fDisableModal');
         };
     } else {
         statusDiv.innerHTML = '<span class="a2f-badge disabled">Désactivé</span><p>Protégez votre compte avec une couche de sécurité supplémentaire.</p>';
