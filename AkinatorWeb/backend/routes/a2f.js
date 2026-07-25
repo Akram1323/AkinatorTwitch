@@ -10,7 +10,7 @@ const speakeasy = require('speakeasy');
 const QRCode = require('qrcode');
 const { db, queries } = require('../services/database');
 const { appendAudit } = require('../services/auditService');
-const { generateBackupCodes, verifyTotp } = require('../services/twoFactor');
+const { generateBackupCodes, verifyTotp, consumeBackupCode } = require('../services/twoFactor');
 
 /**
  * POST /api/a2f/setup
@@ -41,8 +41,11 @@ router.post('/setup', authenticateToken, async (req, res) => {
         const secret = secretObj.base32;
         
         // Stocker temporairement le secret (non activé)
+        // Le compteur anti-rejeu appartient au secret : en remplacer un sans le
+        // remettre à zéro ferait refuser « code déjà utilisé » un code pourtant
+        // neuf, tant que la fenêtre de 30 s du dernier code validé n'est pas passée.
         const updateStmt = db.prepare(
-            'UPDATE users SET a2f_secret = ?, a2f_enabled = 0 WHERE id = ?'
+            'UPDATE users SET a2f_secret = ?, a2f_enabled = 0, a2f_last_step = NULL WHERE id = ?'
         );
         updateStmt.run(secret, user.id);
 
@@ -168,34 +171,54 @@ router.post('/disable', authenticateToken, async (req, res) => {
         const { code, password } = req.body;
         const bcrypt = require('bcrypt');
 
+        // Garde explicite : bcrypt.compare(undefined, hash) lève, ce qui
+        // produirait un 500 là où la requête est simplement incomplète.
+        if (typeof password !== 'string' || password.length === 0) {
+            return res.status(400).json({ success: false, error: 'Mot de passe requis' });
+        }
+
         const user = queries.users.findById.get(req.user.id);
         if (!user) {
             return res.status(404).json({ success: false, error: 'Utilisateur non trouvé' });
         }
 
-        // Vérifier le mot de passe
+        // Facteur 1 : le mot de passe, toujours exigé
         const validPassword = await bcrypt.compare(password, user.password_hash);
         if (!validPassword) {
             return res.status(401).json({ success: false, error: 'Mot de passe incorrect' });
         }
 
-        // Vérifier le code A2F actuel
+        // Facteur 2 : TOTP ou code de secours. Accepter le code de secours ferme
+        // l'impasse de la perte du téléphone — le login les accepte déjà, sans quoi
+        // l'utilisateur reste bloqué avec une 2FA qu'il ne peut plus désactiver.
+        let methode = 'totp';
         if (user.a2f_enabled && user.a2f_secret) {
-            const totpResult = verifyTotp(user, code);
-            if (!totpResult.ok) {
-                return res.status(401).json({ success: false, error: totpResult.error });
+            const saisie = String(code || '').trim();
+
+            if (saisie.length === 10) {
+                methode = 'backup_code';
+                if (!consumeBackupCode(user.id, saisie)) {
+                    return res.status(401).json({ success: false, error: 'Code de secours invalide' });
+                }
+            } else {
+                const totpResult = verifyTotp(user, saisie);
+                if (!totpResult.ok) {
+                    return res.status(401).json({ success: false, error: totpResult.error });
+                }
             }
         }
 
-        // Désactiver l'A2F
-        const updateStmt = db.prepare(
-            'UPDATE users SET a2f_enabled = 0, a2f_secret = NULL WHERE id = ?'
-        );
-        updateStmt.run(user.id);
+        // Désactivation et purge des codes dans la même transaction : un code
+        // survivant n'aurait plus aucun usage et resterait un secret à protéger.
+        const desactiver = db.transaction(() => {
+            db.prepare('UPDATE users SET a2f_enabled = 0, a2f_secret = NULL WHERE id = ?').run(user.id);
+            db.prepare('DELETE FROM a2f_backup_codes WHERE user_id = ?').run(user.id);
+        });
+        desactiver();
 
         console.log(`🔓 A2F désactivé: ${user.username}`);
 
-        appendAudit('a2f.disabled', { userId: user.id });
+        appendAudit('a2f.disabled', { userId: user.id, details: { method: methode } });
 
         res.json({
             success: true,
