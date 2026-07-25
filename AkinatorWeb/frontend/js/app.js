@@ -19,6 +19,36 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+/**
+ * Convertit un horodatage SQLite ("YYYY-MM-DD HH:MM:SS") en Date.
+ * Ces valeurs sont écrites en UTC sans indicateur de fuseau : `new Date()` les
+ * interpréterait en heure LOCALE et afficherait une heure fausse (2 h d'écart en
+ * Europe/Paris l'été), avec un verrou qui semble expirer trop tôt.
+ * Pendant du services/sqliteDate.js côté serveur.
+ */
+function parseSqliteDateUTC(value) {
+    if (!value) return null;
+    var brut = String(value);
+    var aUnFuseau = /[Z]$|[+-]\d{2}:?\d{2}$/.test(brut);
+    var normalise = aUnFuseau ? brut : brut.replace(' ', 'T') + 'Z';
+    var date = new Date(normalise);
+    return isNaN(date.getTime()) ? null : date;
+}
+
+/**
+ * Un compte est-il actuellement verrouillé ?
+ * FAIL-CLOSED, comme services/sqliteDate.js:isStillActive côté serveur (c'est lui
+ * qui décide réellement au login) : locked_until présent mais illisible ⇒ considéré
+ * comme verrouillé. Un horodatage corrompu ne doit jamais faire disparaître le
+ * bouton de déverrouillage.
+ */
+function estVerrouille(user) {
+    if (!user.locked_until) return false;
+    var fin = parseSqliteDateUTC(user.locked_until);
+    if (!fin) return true;
+    return fin.getTime() > Date.now();
+}
+
 // ══════════════════════════════════════════════════════════════
 // Initialisation
 // ══════════════════════════════════════════════════════════════
@@ -207,12 +237,15 @@ function attachEventListeners() {
         logout();
     });
     
-    // A2F toggle
-    document.getElementById('toggleA2F').addEventListener('click', setupA2F);
-    
     // A2F setup modal
     document.getElementById('verifyA2FSetup').addEventListener('click', verifyA2FSetup);
-    
+
+    // Codes de secours 2FA
+    document.getElementById('copyBackupCodes').addEventListener('click', copierCodesSecours);
+    document.getElementById('downloadBackupCodes').addEventListener('click', telechargerCodesSecours);
+    document.getElementById('regenerateBackupCodes').addEventListener('click', regenererCodesSecours);
+    document.getElementById('confirmDisableA2F').addEventListener('click', desactiverA2F);
+
     // A2F login modal
     document.getElementById('verifyA2FLogin').addEventListener('click', verifyA2FLogin);
     
@@ -233,6 +266,9 @@ function attachEventListeners() {
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
             document.querySelectorAll('.modal.active').forEach(function(modal) {
+                // Codes de secours : étape non interruptible, même principe que le
+                // backdrop (voir index.html) — seul le bouton × explicite ferme.
+                if (modal.id === 'backupCodesModal') return;
                 closeModal(modal.id);
             });
         }
@@ -352,6 +388,15 @@ function updateUIForLoggedOutUser() {
     document.getElementById('userMenu').style.display = 'none';
     document.getElementById('tokenDisplay').style.display = 'none';
     currentUser = null;
+
+    // Point de passage systématique de la déconnexion (logout() l'appelle sans
+    // recharger la page) : purger les secrets A2F encore affichés pour qu'ils ne
+    // survivent pas dans le DOM/la mémoire pour la session suivante sur ce poste.
+    purgerCodesSecours();
+    var secretCode = document.getElementById('a2fSecretCode');
+    if (secretCode) secretCode.textContent = '';
+    var qrContainer = document.getElementById('qrCodeContainer');
+    if (qrContainer) qrContainer.innerHTML = '';
 }
 
 function updateTokenDisplay(tokens) {
@@ -877,7 +922,7 @@ function displayUsers(users) {
         tdLogin.textContent = user.last_login ? new Date(user.last_login).toLocaleDateString('fr-FR') : 'Jamais';
         tr.appendChild(tdLogin);
         
-        // Admin status
+        // Admin status + état de verrouillage
         const tdAdmin = document.createElement('td');
         if (user.is_admin) {
             const adminSpan = document.createElement('span');
@@ -886,6 +931,18 @@ function displayUsers(users) {
             tdAdmin.appendChild(adminSpan);
         } else {
             tdAdmin.textContent = '-';
+        }
+        if (estVerrouille(user)) {
+            const lockSpan = document.createElement('span');
+            lockSpan.style.cssText = 'color:var(--danger,#e05561);display:block;font-size:0.75rem;';
+            // fin peut être null (locked_until présent mais illisible) : estVerrouille
+            // est fail-closed sur ce cas, l'affichage a besoin d'un libellé de repli.
+            const fin = parseSqliteDateUTC(user.locked_until);
+            lockSpan.textContent = fin
+                ? '🔒 Verrouillé jusqu\'à ' + fin.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+                : '🔒 Verrouillé (échéance inconnue)';
+            lockSpan.title = user.failed_login_attempts + ' tentative(s) échouée(s)';
+            tdAdmin.appendChild(lockSpan);
         }
         tr.appendChild(tdAdmin);
         
@@ -917,7 +974,27 @@ function displayUsers(users) {
             btnPromote.innerHTML = '<i class="fa-solid fa-shield-halved"></i>';
             tdActions.appendChild(btnPromote);
         }
-        
+
+        // Rétrograder (admins seulement, jamais soi-même : le backend le refuse déjà)
+        if (user.is_admin && user.id !== currentUser.id) {
+            const btnDemote = document.createElement('button');
+            btnDemote.className = 'btn btn-sm btn-ghost';
+            btnDemote.title = 'Rétrograder en utilisateur normal';
+            btnDemote.onclick = () => demoteUserAction(user.id, user.username);
+            btnDemote.innerHTML = '<i class="fa-solid fa-user-minus"></i>';
+            tdActions.appendChild(btnDemote);
+        }
+
+        // Déverrouiller (uniquement si le compte est effectivement verrouillé)
+        if (estVerrouille(user)) {
+            const btnUnlock = document.createElement('button');
+            btnUnlock.className = 'btn btn-sm btn-accent';
+            btnUnlock.title = 'Déverrouiller le compte';
+            btnUnlock.onclick = () => unlockUserAction(user.id, user.username);
+            btnUnlock.innerHTML = '<i class="fa-solid fa-lock-open"></i>';
+            tdActions.appendChild(btnUnlock);
+        }
+
         // Delete button (if not current user)
         if (user.id !== currentUser.id) {
             const btnDelete = document.createElement('button');
@@ -1035,6 +1112,34 @@ async function promoteUser(userId, username) {
     }
 }
 
+async function demoteUserAction(userId, username) {
+    if (!confirm(`Rétrograder ${username} en utilisateur normal ?`)) {
+        return;
+    }
+
+    try {
+        await API.demoteUser(userId);
+        showToast(`${username} rétrogradé`, 'success');
+        loadAdminData();
+    } catch (error) {
+        showToast(error.message || 'Erreur lors de la rétrogradation', 'error');
+    }
+}
+
+async function unlockUserAction(userId, username) {
+    if (!confirm(`Déverrouiller le compte ${username} ?\n\nLes tentatives échouées seront remises à zéro.`)) {
+        return;
+    }
+
+    try {
+        await API.unlockUser(userId);
+        showToast(`Compte ${username} déverrouillé`, 'success');
+        loadAdminData();
+    } catch (error) {
+        showToast(error.message || 'Erreur lors du déverrouillage', 'error');
+    }
+}
+
 async function deleteUser(userId, username) {
     if (!confirm(`⚠️ Supprimer définitivement l'utilisateur ${username} ?\n\nToutes ses données seront supprimées.`)) {
         return;
@@ -1085,6 +1190,8 @@ async function adjustUserTokens(userId, username, currentTokens) {
 // Exposer les fonctions globalement pour les boutons onclick
 window.viewUserDetails = viewUserDetails;
 window.promoteUser = promoteUser;
+window.demoteUserAction = demoteUserAction;
+window.unlockUserAction = unlockUserAction;
 window.deleteUser = deleteUser;
 window.adjustUserTokens = adjustUserTokens;
 
@@ -1098,12 +1205,26 @@ function showModal(modalId) {
 
 function closeModal(modalId) {
     document.getElementById(modalId).classList.remove('active');
-    
+
     var errorDiv = document.getElementById(modalId.replace('Modal', 'Error'));
     if (errorDiv) {
         errorDiv.textContent = '';
         errorDiv.style.display = 'none';
     }
+
+    // Les codes de secours ne sont affichés qu'une seule fois (stockés hashés
+    // ensuite) : sur un poste partagé, les laisser dans le DOM/la mémoire après
+    // la fermeture de la modale les rend lisibles (F12) à la personne suivante.
+    if (modalId === 'backupCodesModal') {
+        purgerCodesSecours();
+    }
+}
+
+/** Vide les codes de secours affichés, du DOM et de la mémoire. */
+function purgerCodesSecours() {
+    codesSecoursAffiches = [];
+    var liste = document.getElementById('backupCodesList');
+    if (liste) liste.innerHTML = '';
 }
 
 function showLoginModal() {
@@ -1260,11 +1381,128 @@ async function verifyA2FSetup() {
             closeModal('a2fSetupModal');
             updateA2FStatus();
             showToast('A2F activé avec succès !', 'success');
+            // Unique occasion de les montrer : ils ne sont stockés que hashés.
+            afficherCodesSecours(response.data.codes);
         }
     } catch (error) {
         hideLoading();
         showToast(error.message || 'Code incorrect', 'error');
     }
+}
+
+/** Codes actuellement affichés, pour les boutons Copier / Télécharger. */
+var codesSecoursAffiches = [];
+
+function afficherCodesSecours(codes) {
+    codesSecoursAffiches = codes || [];
+
+    var liste = document.getElementById('backupCodesList');
+    liste.innerHTML = '';
+    codesSecoursAffiches.forEach(function(code) {
+        var li = document.createElement('li');
+        li.textContent = code;
+        liste.appendChild(li);
+    });
+
+    showModal('backupCodesModal');
+}
+
+async function regenererCodesSecours() {
+    if (!confirm('Générer de nouveaux codes de secours ?\n\nVos codes actuels seront définitivement invalidés.')) {
+        return;
+    }
+
+    try {
+        showLoading('Génération des codes...');
+        var response = await API.generateBackupCodes();
+        hideLoading();
+
+        if (response.success) {
+            afficherCodesSecours(response.data.codes);
+            showToast('Nouveaux codes générés, les anciens sont invalidés', 'success');
+        }
+    } catch (error) {
+        hideLoading();
+        showToast(error.message || 'Erreur lors de la génération', 'error');
+    }
+}
+
+async function desactiverA2F() {
+    var password = document.getElementById('a2fDisablePassword').value;
+    var code = document.getElementById('a2fDisableCode').value.trim();
+    var errorDiv = document.getElementById('a2fDisableError');
+
+    errorDiv.textContent = '';
+    errorDiv.style.display = 'none';
+
+    if (!password) {
+        errorDiv.textContent = 'Mot de passe requis';
+        errorDiv.style.display = 'block';
+        return;
+    }
+
+    // 6 chiffres = TOTP, 10 caractères hexadécimaux = code de secours
+    if (!/^[0-9]{6}$/.test(code) && !/^[0-9a-fA-F]{10}$/.test(code)) {
+        errorDiv.textContent = 'Entrez un code à 6 chiffres ou un code de secours à 10 caractères';
+        errorDiv.style.display = 'block';
+        return;
+    }
+
+    try {
+        showLoading('Désactivation...');
+        var response = await API.disableA2F(code, password);
+        hideLoading();
+
+        if (response.success) {
+            currentUser.a2fEnabled = false;
+            closeModal('a2fDisableModal');
+            updateA2FStatus();
+            showToast('A2F désactivé', 'success');
+        }
+    } catch (error) {
+        hideLoading();
+        errorDiv.textContent = error.message || 'Erreur lors de la désactivation';
+        errorDiv.style.display = 'block';
+    }
+}
+
+async function copierCodesSecours() {
+    var texte = codesSecoursAffiches.join('\n');
+
+    // navigator.clipboard exige un contexte sécurisé (HTTPS ou localhost) :
+    // sur un déploiement HTTP il est absent, on dégrade au lieu d'échouer en silence.
+    if (navigator.clipboard && window.isSecureContext) {
+        try {
+            await navigator.clipboard.writeText(texte);
+            showToast('Codes copiés dans le presse-papiers', 'success');
+            return;
+        } catch (error) { /* on retombe sur la sélection manuelle */ }
+    }
+
+    var liste = document.getElementById('backupCodesList');
+    var selection = window.getSelection();
+    var plage = document.createRange();
+    plage.selectNodeContents(liste);
+    selection.removeAllRanges();
+    selection.addRange(plage);
+    showToast('Copie automatique indisponible : les codes sont sélectionnés, copiez-les', 'warning');
+}
+
+function telechargerCodesSecours() {
+    var contenu = 'Codes de secours AkinatorTwitch\n'
+        + 'Compte : ' + (currentUser ? currentUser.username : '') + '\n'
+        + 'Chaque code ne peut servir qu\'une seule fois.\n\n'
+        + codesSecoursAffiches.join('\n') + '\n';
+
+    var blob = new Blob([contenu], { type: 'text/plain' });
+    var url = URL.createObjectURL(blob);
+    var lien = document.createElement('a');
+    lien.href = url;
+    lien.download = 'akinator-codes-de-secours.txt';
+    document.body.appendChild(lien);
+    lien.click();
+    document.body.removeChild(lien);
+    setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
 }
 
 async function verifyA2FLogin() {
@@ -1274,8 +1512,14 @@ async function verifyA2FLogin() {
     
     errorDiv.style.display = 'none';
     
-    if (!code || code.length !== 6) {
-        errorDiv.textContent = 'Code invalide (6 chiffres)';
+    // 6 chiffres = code TOTP, 10 caractères hexadécimaux = code de secours.
+    // Le backend accepte les deux depuis toujours (verify-login-a2f) ; c'est
+    // uniquement cette validation cliente qui rendait les codes de secours
+    // impossibles à saisir.
+    var estTotp = /^[0-9]{6}$/.test(code);
+    var estCodeSecours = /^[0-9a-fA-F]{10}$/.test(code);
+    if (!estTotp && !estCodeSecours) {
+        errorDiv.textContent = 'Entrez un code à 6 chiffres ou un code de secours à 10 caractères';
         errorDiv.style.display = 'block';
         return;
     }
@@ -1315,7 +1559,10 @@ function updateA2FStatus() {
         statusDiv.innerHTML = '<span class="a2f-badge enabled">Activé</span><p>Votre compte est protégé par l\'A2F.</p>';
         toggleBtn.innerHTML = '<i class="fa-solid fa-lock-open icon"></i> Désactiver l\'A2F';
         toggleBtn.onclick = function() {
-            showToast('Pour désactiver l\'A2F, contactez le support.', 'info');
+            document.getElementById('a2fDisablePassword').value = '';
+            document.getElementById('a2fDisableCode').value = '';
+            document.getElementById('a2fDisableError').style.display = 'none';
+            showModal('a2fDisableModal');
         };
     } else {
         statusDiv.innerHTML = '<span class="a2f-badge disabled">Désactivé</span><p>Protégez votre compte avec une couche de sécurité supplémentaire.</p>';
@@ -1323,6 +1570,11 @@ function updateA2FStatus() {
         toggleBtn.onclick = setupA2F;
     }
     // Note: innerHTML ici est sûr car le contenu est statique (pas de données utilisateur)
+
+    var btnRegen = document.getElementById('regenerateBackupCodes');
+    if (btnRegen) {
+        btnRegen.style.display = (currentUser && currentUser.a2fEnabled) ? 'inline-flex' : 'none';
+    }
 }
 
 // ══════════════════════════════════════════════════════════════

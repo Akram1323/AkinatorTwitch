@@ -245,6 +245,10 @@ const API = {
         return this.post('/a2f/disable', { code, password });
     },
 
+    async generateBackupCodes() {
+        return this.post('/a2f/backup-codes', {});
+    },
+
     // ══════════════════════════════════════════════════════════
     // AVATAR
     // ══════════════════════════════════════════════════════════
@@ -369,6 +373,10 @@ const API = {
 
     async demoteUser(userId) {
         return this.post(`/admin/users/${userId}/demote`, {});
+    },
+
+    async unlockUser(userId) {
+        return this.post(`/admin/users/${userId}/unlock`, {});
     },
 
     async setUserTokens(userId, action, amount, reason) {

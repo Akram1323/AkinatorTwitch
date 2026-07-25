@@ -536,6 +536,9 @@
                         <i class="fa-solid fa-lock icon"></i> Activer l'A2F
                     </button>
                     <p class="settings-note">L'A2F utilise une application comme Google Authenticator ou Authy.</p>
+                    <button class="btn btn-ghost" id="regenerateBackupCodes" style="display:none;margin-top:var(--spacing-sm);">
+                        <i class="fa-solid fa-key icon"></i> Régénérer mes codes de secours
+                    </button>
                 </div>
 
                 <!-- Déconnexion -->
@@ -632,6 +635,65 @@
         </div>
     </div>
 
+    <!-- Backup Codes Modal -->
+    <!-- Étape non interruptible : les codes ne sont affichés qu'une seule fois (stockés
+         hashés ensuite). Comme a2fLoginModal, le backdrop ne ferme pas la modale ; seul
+         le bouton × explicite le fait. -->
+    <div class="modal" id="backupCodesModal">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+            <button class="modal-close" data-close="backupCodesModal">×</button>
+            <h2><i class="fa-solid fa-key icon-title"></i> Vos codes de secours</h2>
+            <div class="info-box" style="background:rgba(224,85,97,0.1);border:1px solid rgba(224,85,97,0.3);border-radius:var(--radius-sm);padding:var(--spacing-sm);margin-bottom:var(--spacing-md);font-size:0.85rem;color:var(--text-secondary);">
+                <i class="fa-solid fa-triangle-exclamation" style="margin-right:6px;"></i>
+                Conservez-les hors de votre téléphone. Chaque code ne sert
+                <strong>qu'une fois</strong> et ils ne seront <strong>plus jamais affichés</strong>.
+                Ils vous permettent de vous connecter si vous perdez votre application
+                d'authentification.
+            </div>
+            <ul id="backupCodesList" class="backup-codes-list"></ul>
+            <div class="results-actions">
+                <button class="btn btn-primary" id="copyBackupCodes">
+                    <i class="fa-solid fa-copy icon"></i> Copier
+                </button>
+                <button class="btn btn-ghost" id="downloadBackupCodes">
+                    <i class="fa-solid fa-download icon"></i> Télécharger
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- A2F Disable Modal -->
+    <div class="modal" id="a2fDisableModal">
+        <div class="modal-backdrop" data-close="a2fDisableModal"></div>
+        <div class="modal-content">
+            <button class="modal-close" data-close="a2fDisableModal">×</button>
+            <h2><i class="fa-solid fa-lock-open icon-title"></i> Désactiver l'A2F</h2>
+            <p class="modal-subtitle">
+                Votre compte ne sera plus protégé par un second facteur.
+            </p>
+            <div class="form-group">
+                <label for="a2fDisablePassword">Mot de passe</label>
+                <div class="password-wrapper">
+                    <input type="password" id="a2fDisablePassword" placeholder="••••••••" autocomplete="current-password">
+                    <button type="button" class="password-toggle" data-target="a2fDisablePassword">
+                        <i class="fa-solid fa-eye icon-sm"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="a2fDisableCode">Code A2F</label>
+                <input type="text" id="a2fDisableCode" maxlength="10" pattern="[0-9]{6}|[0-9a-fA-F]{10}"
+                       placeholder="000000" class="a2f-code-input" autocomplete="off">
+                <small class="form-hint">6 chiffres, ou un code de secours de 10 caractères.</small>
+            </div>
+            <div class="form-error" id="a2fDisableError"></div>
+            <button class="btn btn-danger btn-full" id="confirmDisableA2F">
+                Désactiver l'A2F
+            </button>
+        </div>
+    </div>
+
     <!-- A2F Login Modal -->
     <div class="modal" id="a2fLoginModal">
         <div class="modal-backdrop"></div>
@@ -640,8 +702,9 @@
             <p class="modal-subtitle">Entrez le code de votre application d'authentification</p>
             
             <div class="form-group">
-                <input type="text" id="a2fLoginCode" maxlength="6" pattern="[0-9]{6}" 
+                <input type="text" id="a2fLoginCode" maxlength="10" pattern="[0-9]{6}|[0-9a-fA-F]{10}"
                        placeholder="000000" class="a2f-code-input" autocomplete="off">
+                <small class="form-hint">Vous pouvez aussi saisir un de vos codes de secours (10 caractères).</small>
             </div>
             <div class="form-error" id="a2fLoginError"></div>
             

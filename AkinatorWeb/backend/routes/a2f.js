@@ -5,12 +5,12 @@
 
 const express = require('express');
 const router = express.Router();
-const { authenticateToken, a2fLimiter } = require('../middleware/security');
+const { authenticateToken, a2fLimiter, a2fSessionLimiter } = require('../middleware/security');
 const speakeasy = require('speakeasy');
 const QRCode = require('qrcode');
 const { db, queries } = require('../services/database');
 const { appendAudit } = require('../services/auditService');
-const { generateBackupCodes, verifyTotp } = require('../services/twoFactor');
+const { generateBackupCodes, verifyTotp, consumeBackupCode } = require('../services/twoFactor');
 
 /**
  * POST /api/a2f/setup
@@ -41,8 +41,11 @@ router.post('/setup', authenticateToken, async (req, res) => {
         const secret = secretObj.base32;
         
         // Stocker temporairement le secret (non activé)
+        // Le compteur anti-rejeu appartient au secret : en remplacer un sans le
+        // remettre à zéro ferait refuser « code déjà utilisé » un code pourtant
+        // neuf, tant que la fenêtre de 30 s du dernier code validé n'est pas passée.
         const updateStmt = db.prepare(
-            'UPDATE users SET a2f_secret = ?, a2f_enabled = 0 WHERE id = ?'
+            'UPDATE users SET a2f_secret = ?, a2f_enabled = 0, a2f_last_step = NULL WHERE id = ?'
         );
         updateStmt.run(secret, user.id);
 
@@ -62,7 +65,10 @@ router.post('/setup', authenticateToken, async (req, res) => {
             success: true,
             data: {
                 qrCode: qrCodeDataUrl,
-                // Secret non exposé pour sécurité (utiliser uniquement le QR code)
+                // Le QR code encode déjà ce secret en clair : le renvoyer en texte
+                // n'ajoute aucune exposition et permet l'appairage manuel (poste
+                // sans caméra, lecteur d'écran, application sans scanner).
+                secret,
                 otpauthUrl: secretObj.otpauth_url
             }
         });
@@ -98,11 +104,15 @@ router.post('/verify-setup', a2fLimiter, authenticateToken, async (req, res) => 
             return res.status(401).json({ success: false, error: totpResult.error });
         }
 
-        // Activer l'A2F
-        const updateStmt = db.prepare(
-            'UPDATE users SET a2f_enabled = 1 WHERE id = ?'
-        );
-        updateStmt.run(user.id);
+        // Activation et génération des codes de secours dans la MÊME transaction.
+        // Les découpler laisserait une fenêtre où la 2FA est active sans qu'aucun
+        // code n'existe : si le second appel échouait (réseau, onglet fermé),
+        // l'utilisateur serait protégé sans filet et l'ignorerait.
+        const activer = db.transaction(() => {
+            db.prepare('UPDATE users SET a2f_enabled = 1 WHERE id = ?').run(user.id);
+            return generateBackupCodes(user.id);
+        });
+        const codes = activer();
 
         console.log(`✅ A2F activé: ${user.username}`);
 
@@ -110,7 +120,8 @@ router.post('/verify-setup', a2fLimiter, authenticateToken, async (req, res) => 
 
         res.json({
             success: true,
-            message: 'A2F activé avec succès'
+            message: 'A2F activé avec succès',
+            data: { codes }
         });
 
     } catch (error) {
@@ -155,39 +166,62 @@ router.post('/verify', a2fLimiter, authenticateToken, async (req, res) => {
  * POST /api/a2f/disable
  * Désactive l'A2F
  */
-router.post('/disable', authenticateToken, async (req, res) => {
+router.post('/disable', a2fSessionLimiter, authenticateToken, async (req, res) => {
     try {
         const { code, password } = req.body;
         const bcrypt = require('bcrypt');
+
+        // Garde explicite : bcrypt.compare(undefined, hash) lève, ce qui
+        // produirait un 500 là où la requête est simplement incomplète.
+        if (typeof password !== 'string' || password.length === 0) {
+            return res.status(400).json({ success: false, error: 'Mot de passe requis' });
+        }
 
         const user = queries.users.findById.get(req.user.id);
         if (!user) {
             return res.status(404).json({ success: false, error: 'Utilisateur non trouvé' });
         }
 
-        // Vérifier le mot de passe
+        // Facteur 1 : le mot de passe, toujours exigé
         const validPassword = await bcrypt.compare(password, user.password_hash);
         if (!validPassword) {
+            appendAudit('a2f.disable.failed', { userId: user.id, details: { raison: 'password' } });
             return res.status(401).json({ success: false, error: 'Mot de passe incorrect' });
         }
 
-        // Vérifier le code A2F actuel
+        // Facteur 2 : TOTP ou code de secours. Accepter le code de secours ferme
+        // l'impasse de la perte du téléphone — le login les accepte déjà, sans quoi
+        // l'utilisateur reste bloqué avec une 2FA qu'il ne peut plus désactiver.
+        let methode = 'totp';
         if (user.a2f_enabled && user.a2f_secret) {
-            const totpResult = verifyTotp(user, code);
-            if (!totpResult.ok) {
-                return res.status(401).json({ success: false, error: totpResult.error });
+            const saisie = String(code || '').trim();
+
+            if (saisie.length === 10) {
+                methode = 'backup_code';
+                if (!consumeBackupCode(user.id, saisie)) {
+                    appendAudit('a2f.disable.failed', { userId: user.id, details: { raison: 'backup_code' } });
+                    return res.status(401).json({ success: false, error: 'Code de secours invalide' });
+                }
+            } else {
+                const totpResult = verifyTotp(user, saisie);
+                if (!totpResult.ok) {
+                    appendAudit('a2f.disable.failed', { userId: user.id, details: { raison: 'totp' } });
+                    return res.status(401).json({ success: false, error: totpResult.error });
+                }
             }
         }
 
-        // Désactiver l'A2F
-        const updateStmt = db.prepare(
-            'UPDATE users SET a2f_enabled = 0, a2f_secret = NULL WHERE id = ?'
-        );
-        updateStmt.run(user.id);
+        // Désactivation et purge des codes dans la même transaction : un code
+        // survivant n'aurait plus aucun usage et resterait un secret à protéger.
+        const desactiver = db.transaction(() => {
+            db.prepare('UPDATE users SET a2f_enabled = 0, a2f_secret = NULL WHERE id = ?').run(user.id);
+            db.prepare('DELETE FROM a2f_backup_codes WHERE user_id = ?').run(user.id);
+        });
+        desactiver();
 
         console.log(`🔓 A2F désactivé: ${user.username}`);
 
-        appendAudit('a2f.disabled', { userId: user.id });
+        appendAudit('a2f.disabled', { userId: user.id, details: { method: methode } });
 
         res.json({
             success: true,
@@ -204,7 +238,7 @@ router.post('/disable', authenticateToken, async (req, res) => {
  * POST /api/a2f/backup-codes
  * Regénère les codes de secours (affichés une seule fois).
  */
-router.post('/backup-codes', authenticateToken, async (req, res) => {
+router.post('/backup-codes', a2fSessionLimiter, authenticateToken, async (req, res) => {
     try {
         const user = queries.users.findById.get(req.user.id);
         if (!user || !user.a2f_enabled) {
