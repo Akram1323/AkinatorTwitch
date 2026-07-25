@@ -98,20 +98,40 @@ const registerLimiter = rateLimit({
 });
 
 /**
- * Rate Limiter dédié aux opérations 2FA sensibles (anti brute-force sur 6 chiffres),
- * partagé par /verify, /verify-setup, /disable et /backup-codes.
- * max: 10 et non 5 — js/api.js:119 rejoue automatiquement toute réponse 401, donc
- * chaque tentative ratée de l'utilisateur consomme deux crédits du compteur ; 10
- * conserve le budget réel visé (5 tentatives) plutôt que de le diviser par deux.
+ * Rate Limiter dédié à la vérification 2FA (anti brute-force sur 6 chiffres),
+ * partagé par /verify, /verify-setup et /auth/verify-login-a2f — le gate de
+ * connexion 2FA. max: 5, volontairement pas doublé comme a2fSessionLimiter :
+ * verify-login-a2f s'authentifie avec un tempToken sans session valide, donc le
+ * rejeu automatique de js/api.js:119 (qui exige un refresh réussi) ne s'y applique
+ * pas — un attaquant sur ce chemin dispose de tout le plafond, sans compensation.
  */
 const a2fLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: config.isTest ? 10000 : 10,
+    max: config.isTest ? 10000 : 5,
     message: {
         success: false,
         error: 'Trop de tentatives de vérification 2FA, réessayez dans 15 minutes'
     },
     store: buildLimiterStore('a2f')
+});
+
+/**
+ * Rate Limiter des opérations 2FA exigeant déjà une session authentifiée
+ * (/disable, /backup-codes). Plafond doublé par rapport à a2fLimiter car
+ * js/api.js:119 rejoue automatiquement toute réponse 401 sur ces chemins
+ * authentifiés : chaque tentative de l'utilisateur consomme deux crédits, et 10
+ * conserve donc le budget réel visé de 5 tentatives. a2fLimiter reste à 5 : il
+ * garde /auth/verify-login-a2f, où le rejeu ne s'applique pas (pas de session à
+ * rafraîchir) et où 10 doublerait le budget d'un attaquant sur le gate 2FA.
+ */
+const a2fSessionLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: config.isTest ? 10000 : 10,
+    message: {
+        success: false,
+        error: 'Trop de tentatives, réessayez dans 15 minutes'
+    },
+    store: buildLimiterStore('a2f-session')
 });
 
 /**
@@ -342,6 +362,7 @@ module.exports = {
     authLimiter,
     registerLimiter,
     a2fLimiter,
+    a2fSessionLimiter,
     authenticateToken,
     optionalAuth,
     requireAdmin,

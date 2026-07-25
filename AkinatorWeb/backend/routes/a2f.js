@@ -5,7 +5,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { authenticateToken, a2fLimiter } = require('../middleware/security');
+const { authenticateToken, a2fLimiter, a2fSessionLimiter } = require('../middleware/security');
 const speakeasy = require('speakeasy');
 const QRCode = require('qrcode');
 const { db, queries } = require('../services/database');
@@ -166,7 +166,7 @@ router.post('/verify', a2fLimiter, authenticateToken, async (req, res) => {
  * POST /api/a2f/disable
  * Désactive l'A2F
  */
-router.post('/disable', a2fLimiter, authenticateToken, async (req, res) => {
+router.post('/disable', a2fSessionLimiter, authenticateToken, async (req, res) => {
     try {
         const { code, password } = req.body;
         const bcrypt = require('bcrypt');
@@ -238,7 +238,7 @@ router.post('/disable', a2fLimiter, authenticateToken, async (req, res) => {
  * POST /api/a2f/backup-codes
  * Regénère les codes de secours (affichés une seule fois).
  */
-router.post('/backup-codes', a2fLimiter, authenticateToken, async (req, res) => {
+router.post('/backup-codes', a2fSessionLimiter, authenticateToken, async (req, res) => {
     try {
         const user = queries.users.findById.get(req.user.id);
         if (!user || !user.a2f_enabled) {
