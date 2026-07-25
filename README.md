@@ -213,7 +213,12 @@ Base : `/api`. 🔒 = authentification requise (JWT), 👑 = réservé aux admin
 | POST | `/gift` 🔒 🛡️ | Claim quotidien (même robinet que `/api/auth/claim-daily`, 3 jetons) |
 
 ### 2FA — `/api/a2f` 🔒
-`POST /setup` · `POST /verify-setup` · `POST /verify` · `POST /disable` · `GET /status`
+`POST /setup` · `POST /verify-setup` · `POST /verify` · `POST /disable` ·
+`POST /backup-codes` · `GET /status`
+
+`verify-setup` renvoie les 8 codes de secours à l'activation ; `backup-codes` les
+régénère (les anciens sont invalidés). `disable` exige le mot de passe **et** un
+second facteur : code TOTP (6 chiffres) ou code de secours (10 caractères).
 
 ### Avatar — `/api/avatar` 🔒
 `POST /upload` · `DELETE /`
