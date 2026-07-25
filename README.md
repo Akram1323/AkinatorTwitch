@@ -128,7 +128,9 @@ npm run dev      # développement (rechargement auto via node --watch)
 Ouvrez ensuite **http://localhost:3000** dans votre navigateur.
 
 > 💡 La base SQLite est créée automatiquement au démarrage.
-> Scripts utiles : `npm run init-db`, ainsi que les outils dans `backend/scripts/`
+> La base et l'arbre de décision sont créés au démarrage du serveur, aucune
+> commande d'initialisation n'est nécessaire. Outils d'administration dans
+> `backend/scripts/`
 > (ex. `node scripts/create-admin.js` pour créer un compte administrateur).
 
 ## ⚙️ Configuration (`.env`)
