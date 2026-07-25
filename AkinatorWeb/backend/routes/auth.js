@@ -537,6 +537,7 @@ router.post('/verify-login-a2f',
                         totalGames: user.total_games,
                         avatarUrl: user.avatar_url,
                         a2fEnabled: true,
+                        isAdmin: user.is_admin === 1,
                         canClaimDaily
                     }
                 }
