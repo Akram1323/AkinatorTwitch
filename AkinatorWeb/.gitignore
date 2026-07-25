@@ -21,6 +21,14 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+# Swap d'éditeur : un swap de .env contiendrait les secrets en clair
+*.swp
+*.swo
+
+# Avatars envoyés par les utilisateurs : contenu d'exécution, pas du code.
+# Le dossier doit exister pour que routes/avatar.js puisse y écrire.
+frontend/avatars/*
+!frontend/avatars/.gitkeep
 
 # Build
 dist/
