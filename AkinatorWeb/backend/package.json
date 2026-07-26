@@ -34,7 +34,7 @@
     "rate-limit-redis": "^4.3.1",
     "sharp": "^0.35.3",
     "speakeasy": "^2.0.0",
-    "uuid": "^9.0.1",
+    "uuid": "^14.0.1",
     "zxcvbn": "^4.4.2"
   },
   "devDependencies": {
