@@ -1886,7 +1886,7 @@ async function uploadAvatar(event) {
 function showPrivacyPolicy() {
     var content = document.getElementById('privacyContent');
     content.innerHTML = `
-        <p><strong>Dernière mise à jour :</strong> 28 janvier 2026</p>
+        <p><strong>Dernière mise à jour :</strong> 26 juillet 2026</p>
         
         <h3>1. Introduction</h3>
         <p>AkinatorTwitch ("nous", "notre", "nos") s'engage à protéger votre vie privée. Cette politique explique comment nous collectons, utilisons et protégeons vos données personnelles.</p>
@@ -1950,7 +1950,7 @@ function showPrivacyPolicy() {
 function showDataProcessing() {
     var content = document.getElementById('dataContent');
     content.innerHTML = `
-        <p><strong>Dernière mise à jour :</strong> 28 janvier 2026</p>
+        <p><strong>Dernière mise à jour :</strong> 26 juillet 2026</p>
         
         <h3>1. Responsable du traitement</h3>
         <p>AkinatorTwitch est responsable du traitement de vos données personnelles conformément au Règlement Général sur la Protection des Données (RGPD).</p>
