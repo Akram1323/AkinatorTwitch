@@ -50,12 +50,3 @@ services:
       #   sync: false
       # - key: TWITCH_CLIENT_SECRET
       #   sync: false
-      # BTCPay réel - décommenter pour activer
-      # - key: BTCPAY_SERVER_URL
-      #   sync: false
-      # - key: BTCPAY_API_KEY
-      #   sync: false
-      # - key: BTCPAY_STORE_ID
-      #   sync: false
-      # - key: BTCPAY_WEBHOOK_SECRET
-      #   sync: false
