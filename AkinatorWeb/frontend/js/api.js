@@ -347,6 +347,15 @@ const API = {
         return this.post('/auth/claim-daily', {});
     },
 
+    // Demandes de jetons adressées aux administrateurs
+    async getMyTokenRequests() {
+        return this.get('/tokens/requests');
+    },
+
+    async createTokenRequest(amount, reason) {
+        return this.post('/tokens/requests', { amount, reason });
+    },
+
     // ══════════════════════════════════════════════════════════
     // ADMIN
     // ══════════════════════════════════════════════════════════
@@ -381,6 +390,18 @@ const API = {
 
     async setUserTokens(userId, action, amount, reason) {
         return this.post(`/admin/users/${userId}/tokens`, { action, amount, reason });
+    },
+
+    async getAdminTokenRequests(status = 'pending') {
+        return this.get(`/admin/token-requests?status=${encodeURIComponent(status)}`);
+    },
+
+    async approveTokenRequest(requestId) {
+        return this.post(`/admin/token-requests/${requestId}/approve`, {});
+    },
+
+    async rejectTokenRequest(requestId) {
+        return this.post(`/admin/token-requests/${requestId}/reject`, {});
     },
 
     async getAuditEntries(eventType, limit = 50) {

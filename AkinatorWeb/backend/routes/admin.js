@@ -440,6 +440,143 @@ router.post('/users/:id/unlock', async (req, res) => {
 });
 
 /**
+ * GET /api/admin/token-requests
+ * Demandes de jetons, filtrées par statut (défaut : les demandes en attente).
+ */
+router.get('/token-requests', async (req, res) => {
+    try {
+        const statut = ['pending', 'approved', 'rejected'].includes(req.query.status)
+            ? req.query.status
+            : 'pending';
+        const limit = Math.min(Math.max(parseInt(req.query.limit) || 100, 1), 200);
+
+        const demandes = queries.tokenRequests.findByStatus.all(statut, limit);
+
+        res.json({
+            success: true,
+            data: demandes.map(d => ({
+                id: d.id,
+                userId: d.user_id,
+                username: d.username,
+                userTokens: d.user_tokens,
+                amount: d.amount,
+                reason: d.reason,
+                status: d.status,
+                createdAt: d.created_at,
+                resolvedAt: d.resolved_at
+            }))
+        });
+    } catch (error) {
+        console.error('❌ Erreur liste demandes de jetons:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Erreur lors de la récupération des demandes'
+        });
+    }
+});
+
+/**
+ * Résout une demande de jetons.
+ *
+ * L'UPDATE est conditionné à `status = 'pending'` : si la demande a déjà été
+ * traitée (double clic, deux admins simultanés), `changes` vaut 0 et rien n'est
+ * crédité. Le crédit et le changement de statut sont dans la MÊME transaction,
+ * donc jamais l'un sans l'autre.
+ *
+ * @param {'approved'|'rejected'} decision
+ */
+function resoudreDemande(decision) {
+    return async (req, res) => {
+        try {
+            const demande = queries.tokenRequests.findById.get(req.params.id);
+
+            if (!demande) {
+                return res.status(404).json({ success: false, error: 'Demande introuvable' });
+            }
+
+            if (demande.status !== 'pending') {
+                return res.status(409).json({
+                    success: false,
+                    error: `Demande déjà traitée (${demande.status})`
+                });
+            }
+
+            const demandeur = queries.users.findById.get(demande.user_id);
+            if (!demandeur) {
+                return res.status(404).json({ success: false, error: 'Demandeur introuvable' });
+            }
+
+            const db = require('../services/database').db;
+            const applique = db.transaction(() => {
+                const maj = queries.tokenRequests.resolve.run(decision, req.user.id, demande.id);
+                if (maj.changes === 0) return false;
+
+                if (decision === 'approved') {
+                    queries.users.updateTokens.run(demande.amount, demande.user_id);
+                    queries.transactions.create.run(
+                        uuidv4(), demande.user_id, 'admin_grant', demande.amount, null, 'completed'
+                    );
+                }
+                return true;
+            })();
+
+            // Course perdue : un autre admin a résolu la demande entre-temps.
+            if (!applique) {
+                return res.status(409).json({ success: false, error: 'Demande déjà traitée' });
+            }
+
+            const nouveauSolde = decision === 'approved'
+                ? demandeur.tokens + demande.amount
+                : demandeur.tokens;
+
+            const rawIP = req.ip || req.connection.remoteAddress || 'unknown';
+            appendAudit(`admin.token_request.${decision === 'approved' ? 'approve' : 'reject'}`, {
+                userId: req.user.id,
+                ipHash: hashIPForLogging(rawIP),
+                details: {
+                    requestId: demande.id,
+                    targetId: demande.user_id,
+                    targetUsername: demandeur.username,
+                    adminUsername: req.user.username,
+                    amount: demande.amount,
+                    reason: demande.reason,
+                    oldBalance: demandeur.tokens,
+                    newBalance: nouveauSolde
+                }
+            });
+
+            console.log(`📨 Admin ${req.user.username} ${decision === 'approved' ? 'approuve' : 'refuse'} la demande de ${demandeur.username} (${demande.amount} jetons)`);
+
+            res.json({
+                success: true,
+                message: decision === 'approved'
+                    ? `Demande approuvée : ${demandeur.username} +${demande.amount} jetons`
+                    : `Demande de ${demandeur.username} refusée`,
+                data: {
+                    requestId: demande.id,
+                    status: decision,
+                    userId: demande.user_id,
+                    oldBalance: demandeur.tokens,
+                    newBalance: nouveauSolde
+                }
+            });
+        } catch (error) {
+            console.error('❌ Erreur résolution demande de jetons:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Erreur lors du traitement de la demande'
+            });
+        }
+    };
+}
+
+/** POST /api/admin/token-requests/:id/approve — crédite le demandeur. */
+router.post('/token-requests/:id/approve', resoudreDemande('approved'));
+
+/** POST /api/admin/token-requests/:id/reject — clôt la demande sans créditer. */
+router.post('/token-requests/:id/reject', resoudreDemande('rejected'));
+
+/**
  * GET /api/admin/cleanup-ips
  * Nettoie les IPs anciennes (plus de 12 mois)
  * Conformité RGPD - Recommandation CNIL

@@ -37,6 +37,7 @@ db.pragma('secure_delete = ON');
 const queries = {
     users: null,
     transactions: null,
+    tokenRequests: null,
     games: null,
     tree: null,
     cache: null
@@ -125,6 +126,33 @@ function initializeTables() {
             COMMIT;
         `);
     }
+
+    // Demandes de jetons adressées aux administrateurs.
+    // `resolved_by` est ON DELETE SET NULL : la suppression d'un compte admin ne
+    // doit pas effacer l'historique des décisions (contrairement au demandeur,
+    // dont les données partent en CASCADE au titre du RGPD).
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS token_requests (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            amount INTEGER NOT NULL CHECK(amount > 0),
+            reason TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            resolved_at DATETIME,
+            resolved_by TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (resolved_by) REFERENCES users(id) ON DELETE SET NULL
+        )
+    `);
+    // Une seule demande en attente par utilisateur : la contrainte est posée par la
+    // base (index unique partiel) et non par un contrôle applicatif, pour qu'aucune
+    // course entre deux requêtes simultanées ne puisse en créer deux.
+    db.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_token_requests_une_en_attente
+        ON token_requests(user_id) WHERE status = 'pending'
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_token_requests_status ON token_requests(status)`);
 
     // Table des parties
     db.exec(`
@@ -332,6 +360,38 @@ function initializeQueries() {
             WHERE user_id = ?
             ORDER BY created_at DESC
             LIMIT 50
+        `)
+    };
+
+    // REQUÊTES DEMANDES DE JETONS
+    queries.tokenRequests = {
+        create: db.prepare(`
+            INSERT INTO token_requests (id, user_id, amount, reason)
+            VALUES (?, ?, ?, ?)
+        `),
+        findById: db.prepare('SELECT * FROM token_requests WHERE id = ?'),
+        findByUser: db.prepare(`
+            SELECT * FROM token_requests
+            WHERE user_id = ?
+            ORDER BY created_at DESC, rowid DESC
+            LIMIT 20
+        `),
+        // Jointure sur users pour éviter un N+1 côté panneau admin.
+        findByStatus: db.prepare(`
+            SELECT tr.*, u.username, u.tokens AS user_tokens
+            FROM token_requests tr
+            JOIN users u ON u.id = tr.user_id
+            WHERE tr.status = ?
+            ORDER BY tr.created_at ASC, tr.rowid ASC
+            LIMIT ?
+        `),
+        // Résolution conditionnelle : le `WHERE status = 'pending'` rend l'opération
+        // idempotente. Deux admins qui cliquent en même temps ne peuvent pas créditer
+        // deux fois — le second UPDATE renvoie changes = 0.
+        resolve: db.prepare(`
+            UPDATE token_requests
+            SET status = ?, resolved_at = CURRENT_TIMESTAMP, resolved_by = ?
+            WHERE id = ? AND status = 'pending'
         `)
     };
 

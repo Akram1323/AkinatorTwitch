@@ -1235,6 +1235,7 @@ body {
     border-radius: var(--radius-lg);
     padding: var(--spacing-lg);
     color: var(--text-secondary);
+    margin-bottom: var(--spacing-xl);
 }
 
 .shop-demo-notice > i {
@@ -1253,6 +1254,122 @@ body {
     margin: 0;
     font-size: 0.88rem;
     line-height: 1.5;
+}
+
+/* Demande de jetons à un administrateur */
+.token-request-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    gap: var(--spacing-xl);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-lg);
+    margin-bottom: var(--spacing-xl);
+}
+
+/* Le sélecteur générique .form-group ne stylise que les <input> : le textarea
+   du motif est aligné dessus à la main pour rester cohérent avec les modales. */
+.token-request-form textarea {
+    width: 100%;
+    padding: 0.875rem 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1.5px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 1rem;
+    line-height: 1.5;
+    resize: vertical;
+    transition: all var(--transition-fast);
+    box-sizing: border-box;
+}
+
+.token-request-form textarea::placeholder {
+    color: var(--text-secondary);
+    opacity: 0.6;
+}
+
+.token-request-form textarea:focus {
+    outline: none;
+    border-color: var(--primary);
+    background: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 0 0 3px rgba(145, 70, 255, 0.15);
+}
+
+.token-request-history h3 {
+    font-size: 1.05rem;
+    margin-bottom: var(--spacing-md);
+    color: var(--text-primary);
+}
+
+.token-request-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    max-height: 18rem;
+    overflow-y: auto;
+}
+
+.token-request-list li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.6rem 0.8rem;
+    font-size: 0.88rem;
+}
+
+.token-request-empty {
+    color: var(--text-muted);
+    justify-content: center !important;
+}
+
+.token-request-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.token-request-meta .reason {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 14rem;
+}
+
+.request-status {
+    flex-shrink: 0;
+    padding: 0.2rem 0.6rem;
+    border-radius: var(--radius-full);
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.request-status.pending {
+    background: rgba(255, 214, 0, 0.15);
+    color: var(--warning);
+}
+
+.request-status.approved {
+    background: rgba(0, 206, 201, 0.15);
+    color: var(--accent);
+}
+
+.request-status.rejected {
+    background: rgba(255, 82, 82, 0.15);
+    color: #ff8a80;
 }
 
 /* Petite icône de pièce (header, solde) */
@@ -2098,11 +2215,43 @@ body {
 
 .admin-stats h2,
 .admin-actions h2,
-.admin-users h2 {
+.admin-users h2,
+.admin-token-requests h2 {
     font-size: 1.5rem;
     font-weight: 600;
     margin-bottom: var(--spacing-md);
     color: var(--text-primary);
+}
+
+.admin-token-requests {
+    margin-bottom: var(--spacing-xl);
+}
+
+.admin-token-requests h2 {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+/* Compteur de demandes en attente ; masqué à zéro par le script. */
+.badge-count {
+    background: var(--primary);
+    color: white;
+    font-size: 0.85rem;
+    font-weight: 700;
+    min-width: 1.6rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: var(--radius-full);
+    text-align: center;
+}
+
+/* Motif d'une demande : tronqué dans le tableau, lisible en entier au survol. */
+.request-reason {
+    display: block;
+    max-width: 22rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .stats-grid {
@@ -2241,6 +2390,10 @@ body {
     }
 
     .token-packs-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .token-request-card {
         grid-template-columns: 1fr;
     }
 

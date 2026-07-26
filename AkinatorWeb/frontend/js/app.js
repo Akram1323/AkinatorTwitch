@@ -134,6 +134,13 @@ function attachEventListeners() {
         });
     });
 
+    // Demande de jetons à un administrateur
+    document.getElementById('tokenRequestForm').addEventListener('submit', handleTokenRequest);
+    var motif = document.getElementById('tokenRequestReason');
+    motif.addEventListener('input', function() {
+        document.getElementById('tokenRequestReasonCount').textContent = this.value.length;
+    });
+
     // Game buttons
     document.getElementById('backBtn').addEventListener('click', function() {
         Game.goBack();
@@ -468,7 +475,9 @@ async function handleRegister(event) {
 
         if (response.success) {
             currentUser = response.data.user;
-            currentUser.canClaimDaily = false;
+            // Le serveur fait autorité : un compte neuf a `last_daily_claim` à NULL,
+            // le cadeau quotidien est donc disponible dès l'inscription.
+            currentUser.canClaimDaily = response.data.user.canClaimDaily === true;
             updateUIForLoggedInUser();
             closeModal('registerModal');
             showToast('Bienvenue ' + username + ' ! 3 jetons offerts', 'success');
@@ -734,12 +743,20 @@ function showShopSection() {
             claimBtn.textContent = 'Déjà récupéré aujourd\'hui';
         }
     }
+
+    // À chaque ouverture de la boutique, le panneau repart fermé.
+    document.getElementById('tokenRequestPanel').style.display = 'none';
+    document.querySelectorAll('.shop-pack').forEach(function(el) {
+        el.classList.remove('selected');
+    });
+
+    loadMyTokenRequests();
 }
 
 /**
  * Sélection d'un pack de la boutique.
- * La boutique est une vitrine de démonstration : aucun système de paiement
- * n'est branché, la sélection est donc purement visuelle.
+ * Aucun paiement n'étant branché, le clic révèle le panneau de demande aux
+ * administrateurs, pré-rempli avec le nombre de jetons du pack choisi.
  */
 function selectPack(element) {
     document.querySelectorAll('.shop-pack').forEach(function(el) {
@@ -747,7 +764,131 @@ function selectPack(element) {
     });
     element.classList.add('selected');
 
-    showToast('Achat indisponible : la boutique est une démonstration.', 'info');
+    // data-pack vaut « pack_25 » : le montant est le suffixe.
+    var montant = parseInt(element.dataset.pack.split('_')[1], 10);
+    if (montant > 0) {
+        document.getElementById('tokenRequestAmount').value = montant;
+    }
+
+    var panneau = document.getElementById('tokenRequestPanel');
+    panneau.style.display = 'block';
+    panneau.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ══════════════════════════════════════════════════════════════
+// Demande de jetons à un administrateur
+// ══════════════════════════════════════════════════════════════
+
+var LIBELLES_STATUT_DEMANDE = {
+    pending: 'En attente',
+    approved: 'Approuvée',
+    rejected: 'Refusée'
+};
+
+async function handleTokenRequest(event) {
+    event.preventDefault();
+
+    var champMontant = document.getElementById('tokenRequestAmount');
+    var champMotif = document.getElementById('tokenRequestReason');
+    var errorDiv = document.getElementById('tokenRequestError');
+    var submitBtn = document.getElementById('tokenRequestSubmitBtn');
+
+    errorDiv.textContent = '';
+    errorDiv.style.display = 'none';
+
+    var montant = parseInt(champMontant.value, 10);
+    var motif = champMotif.value.trim();
+
+    // Contrôles repris à l'identique côté serveur : ceux-ci ne servent qu'au confort.
+    if (!Number.isInteger(montant) || montant < 1 || montant > 100) {
+        errorDiv.textContent = 'Indiquez un nombre entier de jetons entre 1 et 100';
+        errorDiv.style.display = 'block';
+        return;
+    }
+
+    if (motif.length < 3 || motif.length > 200) {
+        errorDiv.textContent = 'Le motif doit faire entre 3 et 200 caractères';
+        errorDiv.style.display = 'block';
+        return;
+    }
+
+    try {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Envoi...';
+
+        var response = await API.createTokenRequest(montant, motif);
+
+        if (response.success) {
+            showToast('Demande envoyée aux administrateurs', 'success');
+            champMotif.value = '';
+            document.getElementById('tokenRequestReasonCount').textContent = '0';
+            await loadMyTokenRequests();
+        }
+    } catch (error) {
+        console.error('Erreur demande de jetons:', error);
+        errorDiv.textContent = error.message || "Erreur lors de l'envoi de la demande";
+        errorDiv.style.display = 'block';
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="fa-solid fa-paper-plane icon"></i> Envoyer la demande';
+    }
+}
+
+async function loadMyTokenRequests() {
+    var liste = document.getElementById('tokenRequestList');
+    if (!liste) return;
+
+    try {
+        var response = await API.getMyTokenRequests();
+        afficherMesDemandes(response.data);
+    } catch (error) {
+        console.error('Erreur chargement demandes:', error);
+        liste.innerHTML = '';
+        var li = document.createElement('li');
+        li.className = 'token-request-empty';
+        li.textContent = 'Impossible de charger vos demandes';
+        liste.appendChild(li);
+    }
+}
+
+function afficherMesDemandes(demandes) {
+    var liste = document.getElementById('tokenRequestList');
+    liste.innerHTML = '';
+
+    if (!demandes || demandes.length === 0) {
+        var vide = document.createElement('li');
+        vide.className = 'token-request-empty';
+        vide.textContent = 'Aucune demande pour le moment';
+        liste.appendChild(vide);
+        return;
+    }
+
+    // createElement + textContent : le motif est saisi par l'utilisateur, jamais d'innerHTML.
+    demandes.forEach(function(demande) {
+        var li = document.createElement('li');
+
+        var meta = document.createElement('div');
+        meta.className = 'token-request-meta';
+
+        var titre = document.createElement('strong');
+        titre.textContent = demande.amount + ' jeton' + (demande.amount > 1 ? 's' : '');
+        meta.appendChild(titre);
+
+        var motif = document.createElement('span');
+        motif.className = 'reason';
+        motif.textContent = demande.reason;
+        motif.title = demande.reason;
+        meta.appendChild(motif);
+
+        li.appendChild(meta);
+
+        var statut = document.createElement('span');
+        statut.className = 'request-status ' + demande.status;
+        statut.textContent = LIBELLES_STATUT_DEMANDE[demande.status] || demande.status;
+        li.appendChild(statut);
+
+        liste.appendChild(li);
+    });
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -896,6 +1037,9 @@ async function loadAdminData() {
         const users = await API.getAdminUsers();
         displayUsers(users.data.users);
 
+        // Charger les demandes de jetons en attente
+        await loadTokenRequests();
+
         // Charger le journal des attributions de crédits
         await loadCreditGrants();
     } catch (error) {
@@ -1029,6 +1173,104 @@ function displayUsers(users) {
         tr.appendChild(tdActions);
         tbody.appendChild(tr);
     });
+}
+
+async function loadTokenRequests() {
+    const tbody = document.getElementById('tokenRequestsBody');
+    const compteur = document.getElementById('tokenRequestsCount');
+    if (!tbody) return;
+
+    try {
+        const result = await API.getAdminTokenRequests('pending');
+        const demandes = result.data;
+
+        if (compteur) {
+            compteur.textContent = demandes ? demandes.length : 0;
+            compteur.style.display = demandes && demandes.length > 0 ? '' : 'none';
+        }
+
+        tbody.innerHTML = '';
+        if (!demandes || demandes.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--text-muted);">Aucune demande en attente</td></tr>';
+            return;
+        }
+
+        // createElement + textContent : le motif est du texte saisi par l'utilisateur.
+        demandes.forEach(demande => {
+            const tr = document.createElement('tr');
+
+            const tdUser = document.createElement('td');
+            const strong = document.createElement('strong');
+            strong.textContent = demande.username;
+            tdUser.appendChild(strong);
+            tr.appendChild(tdUser);
+
+            const tdSolde = document.createElement('td');
+            tdSolde.textContent = demande.userTokens;
+            tr.appendChild(tdSolde);
+
+            const tdMontant = document.createElement('td');
+            tdMontant.textContent = '+' + demande.amount;
+            tr.appendChild(tdMontant);
+
+            const tdMotif = document.createElement('td');
+            const motif = document.createElement('span');
+            motif.className = 'request-reason';
+            motif.textContent = demande.reason;
+            motif.title = demande.reason;
+            tdMotif.appendChild(motif);
+            tr.appendChild(tdMotif);
+
+            const tdDate = document.createElement('td');
+            const date = parseSqliteDateUTC(demande.createdAt);
+            tdDate.textContent = date ? date.toLocaleString('fr-FR') : '-';
+            tr.appendChild(tdDate);
+
+            const tdActions = document.createElement('td');
+
+            const btnApprove = document.createElement('button');
+            btnApprove.className = 'btn btn-sm btn-accent';
+            btnApprove.title = 'Approuver et créditer';
+            btnApprove.innerHTML = '<i class="fa-solid fa-check"></i>';
+            btnApprove.onclick = () => resoudreDemandeJetons(demande, 'approve');
+            tdActions.appendChild(btnApprove);
+
+            const btnReject = document.createElement('button');
+            btnReject.className = 'btn btn-sm btn-danger';
+            btnReject.title = 'Refuser';
+            btnReject.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+            btnReject.onclick = () => resoudreDemandeJetons(demande, 'reject');
+            tdActions.appendChild(btnReject);
+
+            tr.appendChild(tdActions);
+            tbody.appendChild(tr);
+        });
+    } catch (error) {
+        console.error('Erreur chargement demandes de jetons:', error);
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--text-muted);">Erreur de chargement</td></tr>';
+    }
+}
+
+async function resoudreDemandeJetons(demande, decision) {
+    const question = decision === 'approve'
+        ? `Créditer ${demande.amount} jeton(s) à ${demande.username} ?`
+        : `Refuser la demande de ${demande.username} ?`;
+
+    if (!confirm(question)) return;
+
+    try {
+        const result = decision === 'approve'
+            ? await API.approveTokenRequest(demande.id)
+            : await API.rejectTokenRequest(demande.id);
+
+        showToast(result.message, decision === 'approve' ? 'success' : 'info');
+
+        // Le solde affiché dans la liste des utilisateurs change aussi : on recharge tout.
+        await loadAdminData();
+    } catch (error) {
+        console.error('Erreur traitement demande:', error);
+        showToast(error.message || 'Erreur lors du traitement de la demande', 'error');
+    }
 }
 
 async function loadCreditGrants() {
@@ -1681,7 +1923,7 @@ function showPrivacyPolicy() {
         <h3>5. Conservation des données</h3>
         <ul>
             <li><strong>Données de compte :</strong> conservées tant que le compte est actif</li>
-            <li><strong>Historique des transactions :</strong> 5 ans (obligation légale)</li>
+            <li><strong>Historique des jetons :</strong> conservé pendant la durée du compte</li>
             <li><strong>Logs de sécurité :</strong> 1 an</li>
             <li><strong>Données supprimées :</strong> effacement sécurisé sous 30 jours</li>
         </ul>
@@ -1731,13 +1973,9 @@ function showDataProcessing() {
                 <td style="padding: 8px;">Sécurité du compte</td>
                 <td style="padding: 8px;">Intérêt légitime</td>
             </tr>
-            <tr style="border-bottom: 1px solid var(--border);">
+            <tr>
                 <td style="padding: 8px;">Logs de connexion</td>
                 <td style="padding: 8px;">Obligation légale</td>
-            </tr>
-            <tr>
-                <td style="padding: 8px;">Transactions crypto</td>
-                <td style="padding: 8px;">Obligation légale (LCB-FT)</td>
             </tr>
         </table>
         
@@ -1762,8 +2000,8 @@ function showDataProcessing() {
                 <td style="padding: 8px;">Durée du compte + 3 ans</td>
             </tr>
             <tr style="border-bottom: 1px solid var(--border);">
-                <td style="padding: 8px;">Transactions</td>
-                <td style="padding: 8px;">5 ans (obligation comptable)</td>
+                <td style="padding: 8px;">Historique des jetons</td>
+                <td style="padding: 8px;">Durée du compte</td>
             </tr>
             <tr style="border-bottom: 1px solid var(--border);">
                 <td style="padding: 8px;">Logs de sécurité</td>
