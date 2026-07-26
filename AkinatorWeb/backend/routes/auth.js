@@ -145,6 +145,12 @@ router.post('/register',
             // Ne pas logger l'IP en clair (conformité RGPD)
             console.log(`✅ Nouvel utilisateur inscrit: ${username}`);
 
+            // `last_daily_claim` vaut NULL sur un compte neuf : le robinet quotidien est
+            // donc ouvert immédiatement, sans attendre 24 h. On lit l'état plutôt que de
+            // le supposer, pour rester aligné sur /login et /verify.
+            const dailyCheck = queries.users.canClaimDaily.get(userId);
+            const canClaimDaily = dailyCheck ? dailyCheck.can_claim === 1 : false;
+
             res.status(201).json({
                 success: true,
                 message: 'Compte créé avec succès ! 3 jetons offerts !',
@@ -153,7 +159,8 @@ router.post('/register',
                         id: userId,
                         username,
                         tokens: 3,
-                        totalGames: 0
+                        totalGames: 0,
+                        canClaimDaily
                     }
                 }
             });

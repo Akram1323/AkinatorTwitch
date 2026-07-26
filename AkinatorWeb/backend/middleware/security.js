@@ -135,6 +135,22 @@ const a2fSessionLimiter = rateLimit({
 });
 
 /**
+ * Rate Limiter des demandes de jetons adressées aux admins.
+ * L'index unique partiel n'autorise déjà qu'une demande en attente à la fois ; ce
+ * plafond vise le cas où l'utilisateur ferait annuler/refuser ses demandes en
+ * boucle pour inonder le panneau admin.
+ */
+const tokenRequestLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 heure
+    max: config.isTest ? 10000 : 5,
+    message: {
+        success: false,
+        error: 'Trop de demandes de jetons, réessayez dans une heure'
+    },
+    store: buildLimiterStore('token-request')
+});
+
+/**
  * Middleware d'authentification JWT
  */
 const authenticateToken = (req, res, next) => {
@@ -363,6 +379,7 @@ module.exports = {
     registerLimiter,
     a2fLimiter,
     a2fSessionLimiter,
+    tokenRequestLimiter,
     authenticateToken,
     optionalAuth,
     requireAdmin,
