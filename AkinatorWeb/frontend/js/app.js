@@ -1277,7 +1277,10 @@ async function loadCreditGrants() {
     const tbody = document.getElementById('grantsTableBody');
     if (!tbody) return;
     try {
-        const result = await API.getAuditEntries('admin.user.tokens', 50);
+        // Deux voies mènent à un crédit : l'attribution directe par un admin
+        // (admin.user.tokens) et l'approbation d'une demande de jetons
+        // (admin.token_request.approve). Les refus ne créditent rien : hors tableau.
+        const result = await API.getAuditEntries('admin.user.tokens,admin.token_request.approve', 50);
         const entries = result.data.entries;
         tbody.innerHTML = '';
         if (!entries || entries.length === 0) {
@@ -1305,12 +1308,14 @@ async function loadCreditGrants() {
             tr.appendChild(tdTarget);
 
             const tdOp = document.createElement('td');
-            if (details.action === 'add') {
-                tdOp.textContent = (details.amount >= 0 ? '+' : '') + details.amount + ' jetons';
-            } else if (details.action === 'set') {
+            // Les approbations de demandes n'ont pas de champ `action` : ce sont
+            // toujours des crédits, d'où le libellé par défaut « +N jetons ».
+            if (details.action === 'set') {
                 tdOp.textContent = 'fixé à ' + details.amount;
+            } else if (details.amount != null) {
+                tdOp.textContent = (details.amount >= 0 ? '+' : '') + details.amount + ' jetons';
             } else {
-                tdOp.textContent = details.amount != null ? String(details.amount) : '-';
+                tdOp.textContent = '-';
             }
             tr.appendChild(tdOp);
 

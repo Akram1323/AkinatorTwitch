@@ -134,6 +134,17 @@ test("l'approbation crédite le demandeur et trace une transaction admin_grant",
     const audit = db.prepare("SELECT * FROM audit_log WHERE event_type = 'admin.token_request.approve' ORDER BY id DESC LIMIT 1").get();
     assert.ok(audit, "l'approbation doit être auditée");
     assert.strictEqual(JSON.parse(audit.details).amount, 20);
+
+    // Bout-en-bout : l'entrée doit REMONTER par la requête exacte que fait le
+    // tableau « Attributions de crédits » du panneau admin. Elle était bien
+    // écrite mais jamais affichée, le tableau ne demandant qu'un seul type.
+    const journal = await request(app)
+        .get('/api/admin/audit?event_type=' + encodeURIComponent('admin.user.tokens,admin.token_request.approve') + '&limit=50')
+        .set('Cookie', adminCtx.cookie);
+    assert.strictEqual(journal.status, 200);
+    const affichee = journal.body.data.entries.find(e => e.id === audit.id);
+    assert.ok(affichee, "l'approbation doit apparaître dans le journal affiché au panneau admin");
+    assert.strictEqual(JSON.parse(affichee.details).targetUsername, JOUEUR.username);
 });
 
 test('le refus ne crédite rien et clôt la demande', async () => {

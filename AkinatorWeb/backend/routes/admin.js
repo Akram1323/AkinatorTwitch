@@ -607,12 +607,18 @@ router.get('/audit', async (req, res) => {
     try {
         const db = require('../services/database').db;
         const limit = Math.min(Math.max(parseInt(req.query.limit) || 100, 1), 500);
-        const eventType = typeof req.query.event_type === 'string' && req.query.event_type.length <= 100
-            ? req.query.event_type
-            : null;
+        // `event_type` accepte plusieurs types séparés par des virgules : un même
+        // tableau du panneau admin réunit des événements de types distincts
+        // (attribution directe + demande de jetons approuvée).
+        const eventTypes = typeof req.query.event_type === 'string' && req.query.event_type.length <= 500
+            ? req.query.event_type.split(',').map(t => t.trim()).filter(Boolean)
+            : [];
 
-        const entries = eventType
-            ? db.prepare('SELECT * FROM audit_log WHERE event_type = ? ORDER BY id DESC LIMIT ?').all(eventType, limit)
+        const entries = eventTypes.length > 0
+            ? db.prepare(
+                `SELECT * FROM audit_log WHERE event_type IN (${eventTypes.map(() => '?').join(',')})
+                 ORDER BY id DESC LIMIT ?`
+            ).all(...eventTypes, limit)
             : db.prepare('SELECT * FROM audit_log ORDER BY id DESC LIMIT ?').all(limit);
 
         res.json({ success: true, data: { entries } });

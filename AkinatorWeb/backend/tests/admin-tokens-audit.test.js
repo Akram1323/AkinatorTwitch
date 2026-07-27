@@ -2,6 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const request = require('supertest');
 const { app, db } = require('./helpers/setup');
+const { appendAudit } = require('../services/auditService');
 
 const ADMIN = { username: 'adminaudit', password: 'C0rrect!Horse#Battery9', rgpdConsent: true };
 const TARGET = { username: 'cibleaudit', password: 'C0rrect!Horse#Battery9', rgpdConsent: true };
@@ -67,4 +68,31 @@ test('GET /api/admin/audit?event_type= filtre par type', async () => {
     // sans filtre : les autres types (auth.register, ...) sont présents
     const all = await request(app).get('/api/admin/audit?limit=100').set('Cookie', cookie);
     assert.ok(all.body.data.entries.some(e => e.event_type !== 'admin.user.tokens'));
+});
+
+test('GET /api/admin/audit?event_type= accepte plusieurs types séparés par des virgules', async () => {
+    // Le tableau « Attributions de crédits » du panneau admin doit réunir les
+    // attributions directes ET les demandes de jetons approuvées, qui portent
+    // deux types d'événement distincts. Sans ce filtre multiple, les
+    // approbations étaient journalisées mais jamais affichées.
+    const { cookie, csrfToken, target } = await adminContext();
+
+    await request(app).post(`/api/admin/users/${target.id}/tokens`)
+        .set('Cookie', cookie).set('X-CSRF-Token', csrfToken)
+        .send({ action: 'add', amount: 1, reason: 'attribution directe' });
+
+    appendAudit('admin.token_request.approve', {
+        userId: target.id,
+        details: { targetUsername: TARGET.username, amount: 4, reason: 'demande approuvée' }
+    });
+
+    const res = await request(app)
+        .get('/api/admin/audit?event_type=admin.user.tokens,admin.token_request.approve&limit=50')
+        .set('Cookie', cookie);
+
+    assert.strictEqual(res.status, 200);
+    const types = new Set(res.body.data.entries.map(e => e.event_type));
+    assert.ok(types.has('admin.user.tokens'), 'les attributions directes doivent être présentes');
+    assert.ok(types.has('admin.token_request.approve'), 'les demandes approuvées doivent être présentes');
+    assert.strictEqual(types.size, 2, 'aucun autre type ne doit passer le filtre');
 });
