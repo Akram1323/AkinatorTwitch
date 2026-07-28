@@ -31,7 +31,7 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
     "qrcode": "^1.5.4",
-    "rate-limit-redis": "^4.3.1",
+    "rate-limit-redis": "^6.0.0",
     "sharp": "^0.35.3",
     "speakeasy": "^2.0.0",
     "uuid": "^9.0.1",
