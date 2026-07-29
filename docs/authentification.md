@@ -32,7 +32,7 @@ avec rotation et détection de vol. C'est la réponse attendue à la question
 
 ## Stratégie de cookies
 
-Posés par `setAuthCookies()` ([auth.js:32](../AkinatorWeb/backend/routes/auth.js)) :
+Posés par `setAuthCookies()` ([auth.js:35](../AkinatorWeb/backend/routes/auth.js)) :
 
 - **`access_token`** : `httpOnly`, `secure` (prod), `sameSite=strict`, `path=/`, 15 min.
 - **`refresh_token`** : mêmes flags, mais **`path=/api/auth`**, 7 j.
@@ -57,7 +57,7 @@ verrouillage (`failed_login_attempts`, `locked_until` : 15 min après 5 échecs)
 
 **Garde-fou critique** : un `tempToken` (`pending2FA:true`) ne doit jamais
 ouvrir une session. `authenticateToken` **rejette explicitement** tout token
-portant `pending2FA` ([security.js:147](../AkinatorWeb/backend/middleware/security.js)),
+portant `pending2FA` ([security.js:174](../AkinatorWeb/backend/middleware/security.js)),
 et `optionalAuth` le traite comme non authentifié. Sans cette garde, un
 attaquant pourrait présenter le tempToken directement et contourner le 2FA.
 
@@ -104,7 +104,7 @@ Mécanisme :
    `revokeAllUserFamilies(userId)`.
 3. À chaque requête, `authenticateToken` recharge le compte et **rejette tout
    access token dont `iat < password_changed_at`**
-   ([security.js:169](../AkinatorWeb/backend/middleware/security.js)).
+   ([security.js:200](../AkinatorWeb/backend/middleware/security.js)).
 
 Subtilités assumées, documentées dans le code :
 
@@ -125,6 +125,26 @@ Différence entre les deux routes :
   session courante **survit**, les autres tombent.
 - `forgot-password` (non authentifié) : invalide **toutes** les sessions, aucune
   n'est ré-émise. Un événement `auth.password.reset` est ajouté au journal d'audit.
+
+Dans les deux cas, le nouveau mot de passe passe par `validateNewPassword()`
+(score `zxcvbn` ≥ 3 + HaveIBeenPwned) : une réinitialisation ne peut pas servir à
+poser un mot de passe plus faible que ce que l'inscription aurait accepté.
+
+## Récupération de compte (`forgot-password`)
+
+Le projet ne stocke **pas d'email** (minimisation RGPD, migration
+`remove-email-column`). Il n'y a donc pas de lien de réinitialisation par mail :
+la récupération s'adosse au **second facteur**.
+
+`POST /api/auth/forgot-password` attend `{ username, a2fCode, newPassword }` et
+exige que l'A2F soit **activée** sur le compte. La vérification suit l'ordre :
+compte introuvable → délai constant de 500 ms puis message générique (pas
+d'énumération) ; A2F non activée → message d'orientation vers un administrateur ;
+code TOTP invalide → 401.
+
+**Corollaire assumé** : un compte sans A2F ne peut pas être récupéré en
+libre-service. C'est le prix de l'absence d'email — le canal de récupération
+serait sinon plus faible que l'authentification qu'il contourne.
 
 ## Ordre des vérifications dans `authenticateToken`
 

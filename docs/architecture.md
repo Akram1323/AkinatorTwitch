@@ -16,15 +16,21 @@ AkinatorWeb/backend/
 ├── server.js            # Point d'entrée : pipeline de middleware, montage des routes, démarrage
 ├── config/config.js     # Configuration centralisée (lecture env, fail-secure des secrets)
 ├── middleware/
-│   ├── security.js      # Helmet, rate limiters, authenticateToken/optionalAuth/requireAdmin, sanitize, logger
+│   ├── security.js      # Helmet, rate limiters (global/login/register/2FA/demandes de jetons), authenticateToken/optionalAuth/requireAdmin, sanitize, logger
 │   └── csrf.js          # Protection CSRF par token utilisateur (persistée en base)
 ├── routes/              # Un router Express par domaine (voir table plus bas)
 ├── services/            # Logique métier & sécurité réutilisable (voir table plus bas)
 ├── migrations/          # Évolutions ponctuelles du schéma (scripts one-shot)
 ├── scripts/             # Outils d'admin / diagnostic (création admin, rotation de clé…)
-├── tests/               # node:test + supertest (un fichier par comportement)
-└── data/akinator.db     # Base SQLite générée au démarrage
+└── tests/               # node:test + supertest (un fichier par comportement)
 ```
+
+Les **données** vivent hors de l'arborescence de code, dans le répertoire
+`DATA_DIR` (défaut `backend/data/`, créé automatiquement) :
+`akinator.db` (base SQLite générée au démarrage) et `avatars/` (uploads servis
+sur `/avatars`). Ce répertoire n'est persistant que si l'hébergeur fournit un
+disque monté — ce n'est **pas** le cas du plan Render `free` actuellement
+utilisé, où base et avatars sont perdus à chaque redéploiement.
 
 ## Pipeline de middleware (ordre réel)
 
@@ -40,7 +46,7 @@ d'atteindre une route.
 6. **`globalLimiter`** — rate limiting global (store Redis si `REDIS_URL`, sinon mémoire).
 7. **`sanitizeInput`** — nettoyage récursif des entrées, **hors champs sensibles** (mots de passe, codes 2FA — sinon on corromprait les secrets avant hachage).
 8. **`securityLogger`** — log RGPD (IP hachée) + détection de motifs suspects (path traversal, XSS, SQLi) → 400.
-9. **Fichiers statiques** — le front est servi depuis `../frontend`.
+9. **Fichiers statiques** — `/avatars` est servi depuis `config.paths.avatarsDir` (hors du dépôt), monté **avant** le static général ; `express.static` appelant `next()` sur fichier absent, les anciens avatars restés dans `frontend/avatars` continuent d'être servis. Le reste du front est servi depuis `../frontend`.
 10. **Routes API** (voir ci-dessous).
 
 ### Montage des routes et CSRF
@@ -73,10 +79,10 @@ Points d'attention dans `server.js` :
 |--------|---------|------|----------------|
 | `auth.js` | `/api/auth` | mixte | Inscription, connexion, 2FA à la connexion, refresh, logout, mot de passe, claim quotidien. Voir [authentification.md](./authentification.md). |
 | `game.js` | `/api/game` | mixte (`optionalAuth`) | Arbre de décision, démarrage de partie (consomme 1 jeton), recommandations IGDB, historique, leaderboard. |
-| `tokens.js` | `/api/tokens` | 🔒 + CSRF | Solde, historique des transactions, gift quotidien. |
+| `tokens.js` | `/api/tokens` | 🔒 + CSRF | Solde, historique des transactions, gift quotidien, **demandes de jetons** adressées aux admins (`GET/POST /requests`). |
 | `a2f.js` | `/api/a2f` | 🔒 + CSRF | Cycle de vie du 2FA TOTP : setup, verify-setup, verify, disable, backup-codes, status. |
 | `avatar.js` | `/api/avatar` | 🔒 + CSRF | Upload (multer+sharp, re-encode WebP) et suppression d'avatar. |
-| `admin.js` | `/api/admin` | 👑 + CSRF | Stats, gestion utilisateurs (promote/demote/unlock/delete), attribution de jetons (`users/:id/tokens`), consultation + vérification du journal d'audit. |
+| `admin.js` | `/api/admin` | 👑 + CSRF | Stats, gestion utilisateurs (promote/demote/unlock/delete), attribution de jetons (`users/:id/tokens`), **traitement des demandes de jetons** (`token-requests`, approve/reject), purge RGPD des IP, consultation + vérification du journal d'audit. |
 
 🔒 = `authenticateToken` · 👑 = `requireAdmin` (après `authenticateToken`).
 
@@ -90,6 +96,27 @@ correspondance IGDB): ...` et poursuit la recherche avec les filtres restants ;
 au démarrage, `validateTreeSlugs()` fait le même contrôle sur tout l'arbre de
 décision et n'émet qu'un avertissement (jamais de blocage).
 
+### Résolution d'une demande de jetons
+
+Aucun paiement n'étant branché, la boutique du front n'ouvre pas une caisse mais
+un formulaire de **demande à un administrateur**. Deux invariants portés par le
+code, pas par l'interface :
+
+- **Une seule demande en attente par utilisateur**, garantie par l'index unique
+  partiel en base. La vérification applicative préalable ne sert qu'à produire un
+  message clair ; c'est le `SQLITE_CONSTRAINT` qui fait foi (→ `409`).
+- **Crédit et changement de statut sont atomiques**. `resoudreDemande()`
+  ([admin.js:488](../AkinatorWeb/backend/routes/admin.js)) exécute l'`UPDATE`
+  conditionné à `status = 'pending'` **et** le crédit dans la même transaction
+  `better-sqlite3`. Si `changes === 0`, un autre admin a gagné la course : rien
+  n'est crédité et la réponse est `409`. Un double clic ne peut donc pas créditer
+  deux fois.
+
+L'approbation trace une transaction `admin_grant` et un événement d'audit
+`admin.token_request.approve` ; le refus ne crédite rien. Le tableau
+« Attributions de crédits » du panneau admin réunit les deux voies de crédit via
+`GET /api/admin/audit?event_type=admin.user.tokens,admin.token_request.approve`.
+
 ## Services (`services/`)
 
 | Service | Rôle |
@@ -98,7 +125,9 @@ décision et n'émet qu'un avertissement (jamais de blocage).
 | `tokenService.js` | Émission/rotation des tokens : access JWT court + refresh opaque rotatif, reuse detection, blacklist par `jti`. Voir [authentification.md](./authentification.md). |
 | `auditService.js` | Journal d'audit append-only à chaînage HMAC (`appendAudit`, `verifyAuditChain`). |
 | `encryption.js` | AES-256-GCM pour chiffrer les IP en base + SHA-256 pour hacher les IP dans les logs (RGPD). |
-| `passwordService.js` | Politique de mot de passe (validation, force). |
+| `passwordService.js` | Politique de mot de passe : force via `zxcvbn` (score ≥ 3) + rejet des mots de passe compromis via HaveIBeenPwned en k-anonymity (fail-open si l'API est injoignable ; jamais appelée en `NODE_ENV=test`). |
+| `dailyTokens.js` | Robinet quotidien unique (3 jetons, colonne `last_daily_claim`) partagé par `/api/auth/claim-daily` et `/api/tokens/gift`. |
+| `sqliteDate.js` | Lecture **en UTC** des horodatages SQLite, fail-closed sur valeur illisible (sinon `locked_until` paraît expiré hors UTC). |
 | `twoFactor.js` | TOTP (speakeasy) : génération de secret, QR, vérification, anti-rejeu (`a2f_last_step`). |
 | `igdb.js` | Réseau : OAuth Twitch (token mis en cache mémoire), requêtes IGDB (jeux, jaquettes), résolution dynamique slug→ID (`resolveSlugDynamic`) avec cache DB `igdb_cache` (TTL 7 jours). |
 | `igdbFilters.js` | Module pur et testable : mappings de filtres (multi-ID, cross-facette) et construction de la requête IGDB (`resolveFilters`, `buildGamesQuery`). Aucun appel réseau. |
@@ -115,6 +144,7 @@ existe déjà »).
 |-------|------|--------------------|
 | `users` | Comptes | `password_hash` (bcrypt), `a2f_secret`, `a2f_last_step` (anti-rejeu TOTP), `password_changed_at` (invalidation de session), `failed_login_attempts`/`locked_until` (verrouillage), `ip_address` chiffrée. |
 | `transactions` | Gifts/daily/parties/attributions admin (`admin_grant`) | `status` contraint (`pending`/`completed`/`failed`). |
+| `token_requests` | Demandes de jetons adressées aux admins | `status` (`pending`/`approved`/`rejected`), `resolved_by`/`resolved_at`. **Index unique partiel** `idx_token_requests_une_en_attente` → une seule demande en attente par utilisateur, garanti par la base et non par une vérification applicative. |
 | `games` | Parties jouées | Filtres + recommandations sérialisés. |
 | `decision_tree` | Arbre Akinator | Nœuds (genre → plateforme → thème → mode). Peuplé au 1er démarrage. |
 | `igdb_cache` | Cache IGDB | Résolution dynamique slug→ID (`resolveSlugDynamic`), TTL 7 jours. |
@@ -153,8 +183,12 @@ rester importable dans les tests.
 depuis `AkinatorWeb/backend` :
 
 ```bash
-JWT_SECRET=ci-secret-0123456789abcdef0123456789abcdef npm test
+npm test          # 144 tests
 ```
 
-Helper commun : `tests/helpers/setup.js`. Les tests montent l'app Express sans
-`app.listen` et utilisent une base isolée.
+Helper commun : `tests/helpers/setup.js`, à require **avant** tout module
+applicatif : il fige `NODE_ENV=test`, fournit un `JWT_SECRET` de repli et pointe
+`DATABASE_PATH` sur une base temporaire propre à chaque processus. Aucune
+variable d'environnement n'est donc nécessaire pour lancer la suite. Les tests
+montent l'app Express sans `app.listen`, et `NODE_ENV=test` neutralise les appels
+réseau réels (HIBP, IGDB) ainsi que les plafonds de rate limiting.
