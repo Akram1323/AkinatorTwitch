@@ -36,7 +36,6 @@ try {
             id TEXT PRIMARY KEY,
             username TEXT UNIQUE NOT NULL COLLATE NOCASE,
             password_hash TEXT NOT NULL,
-            wallet_address TEXT,
             tokens INTEGER DEFAULT 3 CHECK(tokens >= 0),
             total_games INTEGER DEFAULT 0,
             last_daily_claim DATE,
@@ -54,13 +53,13 @@ try {
     // Copier les données (sans la colonne email)
     db.exec(`
         INSERT INTO users_new (
-            id, username, password_hash, wallet_address, tokens, total_games,
+            id, username, password_hash, tokens, total_games,
             last_daily_claim, failed_login_attempts, locked_until,
             a2f_enabled, a2f_secret, avatar_url,
             created_at, last_login, ip_address
         )
-        SELECT 
-            id, username, password_hash, wallet_address, tokens, total_games,
+        SELECT
+            id, username, password_hash, tokens, total_games,
             last_daily_claim, failed_login_attempts, locked_until,
             a2f_enabled, a2f_secret, avatar_url,
             created_at, last_login, ip_address

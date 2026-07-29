@@ -25,7 +25,7 @@ const helmetConfig = helmet({
             styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdnjs.cloudflare.com"],
             fontSrc: ["'self'", "https://fonts.gstatic.com", "https://cdnjs.cloudflare.com"],
             imgSrc: ["'self'", "data:", "https://images.igdb.com", "https:"],
-            connectSrc: ["'self'", "https://api.igdb.com", "https://polygon-rpc.com", "https://polygon-mainnet.g.alchemy.com"],
+            connectSrc: ["'self'", "https://api.igdb.com"],
             'report-uri': ['/api/csp-report'],
             'report-to': ['csp-endpoint']
         }

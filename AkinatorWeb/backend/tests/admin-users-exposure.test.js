@@ -11,8 +11,7 @@ const CHAMPS_INTERDITS = [
     'password_hash',
     'a2f_secret',
     'a2f_last_step',
-    'password_changed_at',
-    'wallet_address'
+    'password_changed_at'
 ];
 
 async function login(user) {
@@ -25,8 +24,8 @@ async function setupUsers() {
     await request(app).post('/api/auth/register').send(TARGET);
     db.prepare('UPDATE users SET is_admin = 1 WHERE username = ?').run(ADMIN.username);
     // On renseigne les colonnes sensibles pour que leur fuite éventuelle soit détectable
-    db.prepare("UPDATE users SET a2f_secret = ?, a2f_last_step = ?, wallet_address = ? WHERE username = ?")
-        .run('JBSWY3DPEHPK3PXP', 12345, '0xdeadbeef', TARGET.username);
+    db.prepare("UPDATE users SET a2f_secret = ?, a2f_last_step = ? WHERE username = ?")
+        .run('JBSWY3DPEHPK3PXP', 12345, TARGET.username);
     return db.prepare('SELECT id, tokens, total_games FROM users WHERE username = ?').get(TARGET.username);
 }
 

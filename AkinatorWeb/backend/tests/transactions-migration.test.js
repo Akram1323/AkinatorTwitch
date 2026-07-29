@@ -43,6 +43,9 @@ test("migration transactions : ancien schéma (CHECK sans 'admin_grant') migré 
             ip_address TEXT
         )
     `);
+    // Index sur la colonne morte : sans un DROP INDEX préalable, SQLite refuse le
+    // DROP COLUMN. Le poser ici garantit que la migration teste bien cet ordre.
+    oldDb.exec('CREATE INDEX idx_users_wallet ON users(wallet_address)');
     oldDb.exec(`
         CREATE TABLE transactions (
             id TEXT PRIMARY KEY,
@@ -73,7 +76,7 @@ test("migration transactions : ancien schéma (CHECK sans 'admin_grant') migré 
         const { initializeTables, queries } = require(${JSON.stringify(databaseModulePath)});
         initializeTables();
         const { v4: uuidv4 } = require('uuid');
-        queries.transactions.create.run(uuidv4(), 'u1', 'admin_grant', 7, null, 'completed');
+        queries.transactions.create.run(uuidv4(), 'u1', 'admin_grant', 7, 'completed');
         console.log('MIGRATION_OK');
     `;
 
@@ -101,6 +104,16 @@ test("migration transactions : ancien schéma (CHECK sans 'admin_grant') migré 
         // La table temporaire de migration ne doit pas subsister
         const orphan = checkDb.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'transactions_new'").get();
         assert.strictEqual(orphan, undefined, 'transactions_new ne doit pas subsister après un rebuild réussi');
+
+        // Vestiges du paiement crypto : la migration doit les avoir retirés
+        const colonnesTx = checkDb.prepare('PRAGMA table_info(transactions)').all().map(c => c.name);
+        assert.ok(!colonnesTx.includes('tx_hash'), 'la colonne tx_hash doit avoir disparu de transactions');
+
+        const colonnesUsers = checkDb.prepare('PRAGMA table_info(users)').all().map(c => c.name);
+        assert.ok(!colonnesUsers.includes('wallet_address'), 'la colonne wallet_address doit avoir disparu de users');
+
+        const indexWallet = checkDb.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_users_wallet'").get();
+        assert.strictEqual(indexWallet, undefined, "l'index idx_users_wallet doit avoir disparu");
     } finally {
         checkDb.close();
     }

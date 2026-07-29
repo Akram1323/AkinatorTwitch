@@ -25,7 +25,7 @@ router.use(requireAdmin);
  * Volontairement une liste blanche (et non une liste noire) : toute nouvelle
  * colonne — potentiellement sensible — reste privée par défaut.
  * Exclus en particulier : password_hash, a2f_secret, a2f_last_step,
- * password_changed_at, wallet_address.
+ * password_changed_at.
  */
 const CHAMPS_UTILISATEUR_PUBLICS = [
     'id',
@@ -277,7 +277,7 @@ router.post('/users/:id/tokens', async (req, res) => {
                 queries.users.setTokens.run(amount, req.params.id);
             }
             queries.transactions.create.run(
-                uuidv4(), req.params.id, 'admin_grant', newBalance - oldBalance, null, 'completed'
+                uuidv4(), req.params.id, 'admin_grant', newBalance - oldBalance, 'completed'
             );
         })();
 
@@ -514,7 +514,7 @@ function resoudreDemande(decision) {
                 if (decision === 'approved') {
                     queries.users.updateTokens.run(demande.amount, demande.user_id);
                     queries.transactions.create.run(
-                        uuidv4(), demande.user_id, 'admin_grant', demande.amount, null, 'completed'
+                        uuidv4(), demande.user_id, 'admin_grant', demande.amount, 'completed'
                     );
                 }
                 return true;

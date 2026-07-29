@@ -133,7 +133,7 @@ router.post('/register',
             queries.users.create.run(userId, username, passwordHash, 3, encryptedIP || null);
 
             // Enregistrer la transaction de jetons offerts
-            queries.transactions.create.run(uuidv4(), userId, 'gift', 3, null, 'completed');
+            queries.transactions.create.run(uuidv4(), userId, 'gift', 3, 'completed');
 
             // Journal d'audit (inscription)
             appendAudit('auth.register', { userId, ipHash: hashIPForLogging(rawIP), details: { username } });

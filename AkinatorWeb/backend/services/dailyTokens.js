@@ -36,7 +36,7 @@ const claimDailyTokens = db.transaction((userId) => {
     }
 
     queries.transactions.create.run(
-        uuidv4(), userId, 'daily', DAILY_TOKENS, null, 'completed'
+        uuidv4(), userId, 'daily', DAILY_TOKENS, 'completed'
     );
 
     const updatedUser = queries.users.findById.get(userId);

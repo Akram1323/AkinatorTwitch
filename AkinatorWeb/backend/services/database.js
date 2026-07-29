@@ -53,7 +53,6 @@ function initializeTables() {
             id TEXT PRIMARY KEY,
             username TEXT UNIQUE NOT NULL COLLATE NOCASE,
             password_hash TEXT NOT NULL,
-            wallet_address TEXT,
             tokens INTEGER DEFAULT 3 CHECK(tokens >= 0),
             total_games INTEGER DEFAULT 0,
             last_daily_claim DATE,
@@ -89,6 +88,14 @@ function initializeTables() {
         db.exec('ALTER TABLE users ADD COLUMN password_changed_at INTEGER');
     } catch (e) { /* Colonne existe déjà */ }
 
+    // Migration : retrait du vestige de paiement crypto. `wallet_address` n'est plus
+    // ni lue ni écrite depuis le retrait du paiement ; l'index doit tomber AVANT la
+    // colonne (SQLite refuse un DROP COLUMN sur une colonne indexée).
+    db.exec('DROP INDEX IF EXISTS idx_users_wallet');
+    try {
+        db.exec('ALTER TABLE users DROP COLUMN wallet_address');
+    } catch (e) { /* Colonne déjà absente (base créée après le retrait) */ }
+
     // Table des transactions
     db.exec(`
         CREATE TABLE IF NOT EXISTS transactions (
@@ -96,17 +103,23 @@ function initializeTables() {
             user_id TEXT NOT NULL,
             type TEXT NOT NULL CHECK(type IN ('purchase', 'gift', 'daily', 'game', 'admin_grant')),
             amount INTEGER NOT NULL,
-            tx_hash TEXT,
             status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'completed', 'failed')),
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
     `);
 
-    // Migration : le CHECK de transactions.type n'inclut pas 'admin_grant' sur
-    // les bases existantes et SQLite ne modifie pas un CHECK — rebuild de la table.
+    // Migration (rebuild) de la table `transactions`, déclenchée par DEUX motifs :
+    //  - le CHECK de `type` n'inclut pas 'admin_grant' sur les bases antérieures et
+    //    SQLite ne sait pas modifier un CHECK ;
+    //  - la colonne `tx_hash`, vestige du paiement crypto, subsiste : elle n'a jamais
+    //    reçu autre chose que NULL depuis le retrait du paiement.
+    // 'purchase' RESTE dans le CHECK : des lignes historiques portent ce type et le
+    // rebuild les recopie telles quelles.
+    // La liste de colonnes de l'INSERT est explicite (et non `SELECT *`) : l'ancienne
+    // table a une colonne de plus que la nouvelle.
     const txTable = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'transactions'").get();
-    if (txTable && !txTable.sql.includes('admin_grant')) {
+    if (txTable && (!txTable.sql.includes('admin_grant') || txTable.sql.includes('tx_hash'))) {
         db.exec(`
             DROP TABLE IF EXISTS transactions_new;
             BEGIN;
@@ -115,12 +128,12 @@ function initializeTables() {
                 user_id TEXT NOT NULL,
                 type TEXT NOT NULL CHECK(type IN ('purchase', 'gift', 'daily', 'game', 'admin_grant')),
                 amount INTEGER NOT NULL,
-                tx_hash TEXT,
                 status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'completed', 'failed')),
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             );
-            INSERT INTO transactions_new SELECT * FROM transactions;
+            INSERT INTO transactions_new (id, user_id, type, amount, status, created_at)
+                SELECT id, user_id, type, amount, status, created_at FROM transactions;
             DROP TABLE transactions;
             ALTER TABLE transactions_new RENAME TO transactions;
             COMMIT;
@@ -266,7 +279,6 @@ function initializeTables() {
     // Index pour optimisation et sécurité
     db.exec(`
         CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
-        CREATE INDEX IF NOT EXISTS idx_users_wallet ON users(wallet_address);
         CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(user_id);
         CREATE INDEX IF NOT EXISTS idx_games_user ON games(user_id);
         CREATE INDEX IF NOT EXISTS idx_tree_parent ON decision_tree(parent_id);
@@ -352,8 +364,8 @@ function initializeQueries() {
     // REQUÊTES TRANSACTIONS
     queries.transactions = {
         create: db.prepare(`
-            INSERT INTO transactions (id, user_id, type, amount, tx_hash, status)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO transactions (id, user_id, type, amount, status)
+            VALUES (?, ?, ?, ?, ?)
         `),
         findByUser: db.prepare(`
             SELECT * FROM transactions

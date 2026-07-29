@@ -2503,23 +2503,6 @@ body {
     font-size: 0.8rem;
 }
 
-/* ─────────────────────────────────────────────────────────────
-   Admin Transactions Section
-   ───────────────────────────────────────────────────────────── */
-.admin-transactions {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    padding: var(--spacing-md);
-    margin-bottom: var(--spacing-lg);
-}
-
-.admin-transactions h2 {
-    font-size: 1.1rem;
-    margin-bottom: var(--spacing-sm);
-    color: var(--text-primary);
-}
-
 /* Codes de secours 2FA */
 .backup-codes-list {
     list-style: none;

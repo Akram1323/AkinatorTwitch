@@ -80,7 +80,6 @@ router.get('/transactions', authenticateToken, (req, res) => {
                 type: tx.type,
                 amount: tx.amount,
                 status: tx.status,
-                txHash: tx.tx_hash,
                 createdAt: tx.created_at
             }))
         });
