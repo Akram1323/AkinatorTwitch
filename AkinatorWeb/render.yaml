@@ -3,19 +3,17 @@ services:
     name: akinatorweb
     runtime: node
     region: frankfurt
-    # 'free' n'autorise PAS de disque persistant : la base SQLite et les avatars
-    # sont perdus à chaque redéploiement. 'starter' est le minimum pour un disque
-    # (et supprime aussi la mise en veille après inactivité).
-    plan: starter
+    # Plan 'free' : PAS de disque persistant possible, et mise en veille après
+    # inactivité. Conséquence assumée pour cette démo : le système de fichiers
+    # est éphémère, donc la base SQLite et les avatars uploadés sont PERDUS à
+    # chaque redéploiement et à chaque réveil après veille.
+    # Le compte admin est recréé au démarrage (ADMIN_USERNAME/ADMIN_PASSWORD),
+    # mais les comptes utilisateurs, parties et jetons ne survivent pas.
+    # Passer à 'starter' + un bloc `disk:` monté sur /var/data (avec
+    # DATA_DIR=/var/data) si les données doivent être conservées.
+    plan: free
     buildCommand: cd backend && npm install
     startCommand: cd backend && node server.js
-    # Disque persistant : survit aux redéploiements et aux redémarrages.
-    # Contrainte : un service avec disque ne peut pas être scalé au-delà
-    # d'une instance (ce que SQLite impose déjà de toute façon).
-    disk:
-      name: akinator-data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
@@ -27,10 +25,8 @@ services:
         value: Akinator
       - key: ADMIN_PASSWORD
         sync: false        # À renseigner manuellement dans Render (votre mot de passe admin)
-      # Base de données et avatars sur le disque monté.
-      # DATA_DIR suffit : le code en dérive akinator.db et avatars/.
-      - key: DATA_DIR
-        value: /var/data
+      # Pas de DATA_DIR : sans disque monté, le code retombe sur backend/data,
+      # créé automatiquement au démarrage (et perdu au redéploiement).
       # Secrets REQUIS en production : sans eux le serveur refuse de démarrer
       # (fail-secure, services/encryption.js et services/auditService.js).
       # Format imposé : 64 caractères hexadécimaux — donc PAS generateValue,
