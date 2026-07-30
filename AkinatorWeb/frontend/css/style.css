@@ -1215,14 +1215,6 @@ body {
 .pack-amount {
     font-size: 1.5rem;
     font-weight: 800;
-    margin-bottom: var(--spacing-xs);
-}
-
-.pack-price {
-    font-size: 1.2rem;
-    color: var(--accent);
-    font-weight: 600;
-    margin-bottom: var(--spacing-xs);
 }
 
 /* Bandeau « démonstration » sous les packs (aucun paiement branché) */
